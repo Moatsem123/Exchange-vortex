@@ -1,384 +1,295 @@
-
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
-  Lock,
-  Eye,
-  EyeOff,
-  ArrowLeft,
-  ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  KeyRound,
+  Lock, Eye, EyeOff, KeyRound, ShieldCheck, AlertCircle,
+  CheckCircle2, Loader2, ArrowRight, Calendar, MapPin, Globe, Activity,
 } from "lucide-react";
-import BrandOrbitLogo from "../shared/BrandOrbitLogo";
-import api from "../services/api"; 
+import { useToast } from "../shared/Toast";
+import authService from "../services/auth";
+import { useAuth } from "../context/AuthContext";
+import { extractApiError, formatDate } from "../shared/helpers";
 
 function ChangePasswordPage() {
   const navigate = useNavigate();
+  const toast = useToast();
+  const { user } = useAuth();
 
-
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordConfirmation, setPasswordConfirmation] = useState("");
-
-
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-
-
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState({ current: false, next: false, confirm: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  function validate() {
+    if (!current) return "كلمة المرور الحالية مطلوبة";
+    if (!next) return "كلمة المرور الجديدة مطلوبة";
+    if (next.length < 8) return "كلمة المرور يجب أن تكون 8 أحرف على الأقل";
+    if (next !== confirm) return "كلمتا المرور غير متطابقتين";
+    return null;
+  }
 
-  async function handleSubmit(event) {
-    if (event) event.preventDefault();
+  async function handleSubmit(e) {
+    e.preventDefault();
     setError("");
-
-
-    if (!currentPassword || !password || !passwordConfirmation) {
-      setError("الرجاء تعبئة جميع الحقول");
-      return;
-    }
-    if (password.length < 8) {
-      setError("كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
-      return;
-    }
-    if (password !== passwordConfirmation) {
-      setError("كلمتا المرور غير متطابقتين");
-      return;
-    }
+    const v = validate();
+    if (v) return setError(v);
 
     setLoading(true);
     try {
-      
-      await api.put("/auth/change-password", {
-        current_password: currentPassword,
-        password: password,
-        password_confirmation: passwordConfirmation,
+      await authService.changePassword({
+        current_password: current,
+        password: next,
+        password_confirmation: confirm,
       });
-
       setSuccess(true);
-
-     
-      setTimeout(() => navigate("/dashboard"), 2000);
+      toast.success("تم تغيير كلمة المرور بنجاح");
+      setTimeout(() => navigate("/dashboard"), 1800);
     } catch (err) {
-      
-      if (err.response?.status === 401) {
-        setError("كلمة المرور الحالية غير صحيحة");
-      } else if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else {
-        setError("تعذّر الاتصال بالخادم");
-      }
+      setError(extractApiError(err));
     } finally {
       setLoading(false);
     }
   }
 
+  const strength = computeStrength(next);
+
   return (
-    <div
-      className="min-h-screen"
-      dir="rtl"
-      style={{ background: "#f4f6fb", color: "#0f172a" }}
-    >
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1fr_2fr]">
-
-        <section
-          className="relative order-2 flex min-h-screen items-center justify-center overflow-hidden border-l border-slate-200 px-4 py-8 sm:px-6 md:px-8 lg:order-1 lg:min-h-screen"
-          style={{ background: "#ffffff" }}
-        >
-          <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(45,212,191,0.18)_1px,transparent_1px)] [background-size:18px_18px]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.08),transparent_38%)]" />
-          <div className="pointer-events-none absolute -bottom-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-teal-300/15 blur-3xl" />
-
-          <motion.div
-            className="relative z-10 w-full max-w-[380px] sm:max-w-[400px]"
-            initial={{ opacity: 0, x: -35, scale: 0.98 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ duration: 0.7, ease: "easeOut" }}
-          >
-     
-            <motion.button
-              type="button"
-              onClick={() => navigate("/dashboard")}
-              className="mb-5 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-400/50 hover:text-teal-700"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
+    <div className="min-h-screen bg-[#f4f6fb]" dir="rtl">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-6">
+          <div className="flex items-start justify-between gap-4">
+            <Link to="/dashboard" className="ep-btn ep-btn-ghost">
               <ArrowRight className="h-3.5 w-3.5" />
-              <span>الرجوع للوحة التحكم</span>
-            </motion.button>
+              الرجوع
+            </Link>
+            <div className="flex items-start gap-3 text-right">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">الرئيسية / الإعدادات / تغيير كلمة المرور</p>
+                <h1 className="text-2xl font-black text-slate-900">تغيير كلمة المرور</h1>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700">
+                <KeyRound className="h-6 w-6" />
+              </div>
+            </div>
+          </div>
+        </div>
 
-   
-            <div className="mb-6 flex flex-col items-center text-center sm:mb-7">
-              <motion.div
-                className="mb-4"
-                initial={{ opacity: 0, y: -14, scale: 0.92 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.55, delay: 0.1 }}
-              >
-                <BrandOrbitLogo size={76} />
-              </motion.div>
-
-              <motion.h1
-                className="text-2xl font-black tracking-tight sm:text-3xl"
-                style={{ color: "#1e293b" }}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.18 }}
-              >
-                تغيير كلمة المرور
-              </motion.h1>
-
-              <motion.p
-                className="mt-2 text-xs leading-6 sm:text-sm"
-                style={{ color: "#64748b" }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.28 }}
-              >
-                أدخل كلمة المرور الحالية واختر كلمة مرور جديدة آمنة
-              </motion.p>
-
-              <motion.div
-                className="mt-4 h-[2px] rounded-full bg-gradient-to-l from-transparent via-teal-500 to-transparent"
-                initial={{ width: 0 }}
-                animate={{ width: 78 }}
-                transition={{ duration: 0.7, delay: 0.38 }}
-              />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[300px_1fr]">
+          <aside className="space-y-4">
+            <div className="ep-card-static p-5">
+              <p className="text-xs font-bold text-slate-500 mb-3 text-right flex items-center justify-end gap-2">
+                الأمن والحماية
+                <ShieldCheck className="h-3.5 w-3.5" />
+              </p>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">
+                    جيد
+                  </span>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                </div>
+                <p className="mt-3 text-right text-sm font-black text-slate-900">حسابك محمي</p>
+                <p className="text-right text-[11px] text-slate-500">لا توجد تهديدات أمنية</p>
+              </div>
             </div>
 
+            <div className="ep-card-static p-5">
+              <p className="mb-3 text-xs font-bold text-slate-500 text-right flex items-center justify-end gap-2">
+                آخر تسجيل دخول
+                <Calendar className="h-3.5 w-3.5" />
+              </p>
+              <div className="space-y-2.5 text-xs">
+                <InfoLine icon={Calendar} label="التاريخ" value={formatDate(new Date(), { withTime: false })} />
+                <InfoLine icon={MapPin} label="الموقع" value={user?.location || "غير متاح"} />
+                <InfoLine icon={Globe} label="عنوان IP" value={user?.last_ip || "—"} />
+              </div>
+            </div>
 
-            <motion.div
-              className="rounded-[22px] border border-slate-200 p-4 sm:rounded-[24px] sm:p-5"
-              style={{
-                background: "#ffffff",
-                boxShadow:
-                  "0 25px 60px rgba(15,23,42,0.08), 0 1px 0 rgba(15,23,42,0.04)",
-              }}
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.35 }}
-            >
-   
+            <div className="ep-card-static p-5">
+              <p className="mb-3 text-xs font-bold text-slate-500 text-right flex items-center justify-end gap-2">
+                نشاط الحساب
+                <Activity className="h-3.5 w-3.5" />
+              </p>
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 text-xs text-emerald-700">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>لا توجد أنشطة مشبوهة في آخر 30 يومًا</span>
+              </div>
+            </div>
+          </aside>
+
+          <main>
+            <form onSubmit={handleSubmit} className="ep-card-static p-6">
               {success && (
-                <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-700">
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-700"
+                >
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>
-                    تم تغيير كلمة المرور بنجاح. سيتم تحويلك إلى لوحة التحكم...
-                  </span>
-                </div>
+                  تم تغيير كلمة المرور بنجاح. سيتم تحويلك...
+                </motion.div>
               )}
-
 
               {error && !success && (
-                <div className="mb-3 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700"
+                >
                   <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
+                  {error}
+                </motion.div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-     
+              <div className="space-y-5">
                 <PasswordField
                   label="كلمة المرور الحالية"
-                  icon={KeyRound}
-                  value={currentPassword}
-                  onChange={setCurrentPassword}
-                  show={showCurrent}
-                  onToggleShow={() => setShowCurrent((s) => !s)}
-                  placeholder="••••••••••"
-                  delay={0.48}
+                  required
+                  value={current}
+                  onChange={setCurrent}
+                  show={show.current}
+                  onToggle={() => setShow((p) => ({ ...p, current: !p.current }))}
+                  hint="أدخل كلمة المرور الحالية الخاصة بحسابك"
                   disabled={loading || success}
                 />
 
-         
-                <PasswordField
-                  label="كلمة المرور الجديدة"
-                  icon={Lock}
-                  value={password}
-                  onChange={setPassword}
-                  show={showNew}
-                  onToggleShow={() => setShowNew((s) => !s)}
-                  placeholder="على الأقل 8 أحرف"
-                  delay={0.55}
-                  disabled={loading || success}
-                />
+                <div>
+                  <PasswordField
+                    label="كلمة المرور الجديدة"
+                    required
+                    value={next}
+                    onChange={setNext}
+                    show={show.next}
+                    onToggle={() => setShow((p) => ({ ...p, next: !p.next }))}
+                    disabled={loading || success}
+                  />
 
-  
-                <PasswordField
-                  label="تأكيد كلمة المرور"
-                  icon={ShieldCheck}
-                  value={passwordConfirmation}
-                  onChange={setPasswordConfirmation}
-                  show={showConfirm}
-                  onToggleShow={() => setShowConfirm((s) => !s)}
-                  placeholder="أعد إدخال كلمة المرور الجديدة"
-                  delay={0.62}
-                  disabled={loading || success}
-                />
-
-     
-                <motion.button
-                  type="submit"
-                  disabled={loading || success}
-                  className="group relative mt-2 flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl text-sm font-black text-white transition duration-300 hover:scale-[1.015] disabled:cursor-not-allowed disabled:opacity-70 sm:h-13 sm:text-base"
-                  style={{
-                    background: "linear-gradient(to left, #1e293b, #475569)",
-                    boxShadow: "0 14px 30px rgba(30,41,59,0.25)",
-                  }}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: 0.72 }}
-                >
-                  <span className="absolute inset-y-0 -left-20 w-16 rotate-12 bg-white/30 blur-md transition-all duration-700 group-hover:left-[120%]" />
-
-                  {loading ? (
-                    <Loader2 className="relative z-10 h-5 w-5 animate-spin" />
-                  ) : success ? (
-                    <CheckCircle2 className="relative z-10 h-5 w-5" />
-                  ) : (
-                    <ArrowLeft className="relative z-10 h-5 w-5 transition-transform group-hover:-translate-x-1" />
+                  {next && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="mt-3"
+                    >
+                      <div className="mb-2 flex gap-1">
+                        {[0, 1, 2, 3].map((i) => (
+                          <div
+                            key={i}
+                            className={`h-1 flex-1 rounded-full transition ${i < strength.score ? strength.color : "bg-slate-200"}`}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-right text-[11px] font-bold" style={{ color: strength.text }}>{strength.label}</p>
+                      <ul className="mt-3 space-y-1.5 text-right">
+                        <PwdRule ok={next.length >= 8} text="8 أحرف على الأقل" />
+                        <PwdRule ok={/[A-Z]/.test(next)} text="حرف كبير واحد على الأقل" />
+                        <PwdRule ok={/[a-z]/.test(next)} text="حرف صغير واحد على الأقل" />
+                        <PwdRule ok={/\d/.test(next)} text="رقم واحد على الأقل" />
+                        <PwdRule ok={/[^A-Za-z0-9]/.test(next)} text="رمز خاص واحد على الأقل" />
+                      </ul>
+                    </motion.div>
                   )}
+                </div>
 
-                  <span className="relative z-10">
-                    {loading
-                      ? "جارٍ التغيير..."
-                      : success
-                      ? "تم التغيير"
-                      : "تغيير كلمة المرور"}
-                  </span>
-                </motion.button>
-              </form>
-            </motion.div>
+                <PasswordField
+                  label="تأكيد كلمة المرور الجديدة"
+                  required
+                  value={confirm}
+                  onChange={setConfirm}
+                  show={show.confirm}
+                  onToggle={() => setShow((p) => ({ ...p, confirm: !p.confirm }))}
+                  hint="أعد إدخال كلمة المرور الجديدة للتأكيد"
+                  disabled={loading || success}
+                />
 
-            <motion.p
-              className="mt-6 text-center text-[11px] sm:mt-7 sm:text-xs"
-              style={{ color: "#94a3b8" }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.82 }}
-            >
-              Exchange Vortex © 2024 — نظام إدارة الصرافة
-            </motion.p>
-          </motion.div>
-        </section>
+                <button type="submit" disabled={loading || success} className="ep-btn ep-btn-primary w-full h-12 text-sm">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                  حفظ كلمة المرور
+                </button>
 
-        
-        <section
-          className="relative order-1 flex min-h-[46vh] items-center justify-center overflow-hidden px-4 py-12 text-white sm:min-h-[52vh] sm:px-6 md:px-8 lg:order-2 lg:min-h-screen lg:px-10 xl:px-16"
-          style={{ background: "#1e293b" }}
-        >
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,#1e293b_0%,#334155_50%,#1e293b_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(45,212,191,0.18),transparent_30%)]" />
-
-          <motion.div
-            className="relative z-10 mx-auto w-full max-w-xl px-2 text-center sm:max-w-2xl lg:max-w-3xl"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-          >
-            <motion.div
-              className="mb-4 inline-flex items-center gap-2 rounded-full border border-teal-400/25 px-3 py-1.5 text-[11px] font-bold sm:mb-5 sm:px-4 sm:py-2 sm:text-xs"
-              style={{ background: "rgba(20,184,166,0.10)", color: "#5eead4" }}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              أمان وحماية حسابك
-            </motion.div>
-
-            <motion.h2
-              className="text-3xl font-black leading-[1.25] text-white sm:text-4xl md:text-5xl xl:text-6xl"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.65, delay: 0.28 }}
-            >
-              حماية
-              <br />
-              <span style={{ color: "#2dd4bf" }}>بياناتك المالية</span>
-            </motion.h2>
-
-            <motion.p
-              className="mx-auto mt-5 max-w-lg text-sm leading-7 sm:mt-7 sm:text-base sm:leading-8 md:max-w-2xl md:text-[17px] md:leading-9"
-              style={{ color: "#cbd5e1" }}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.65, delay: 0.4 }}
-            >
-              غيّر كلمة المرور بشكل دوري للحفاظ على أعلى مستوى من الأمان. اختر
-              كلمة مرور قوية تجمع بين أحرف وأرقام ورموز.
-            </motion.p>
-          </motion.div>
-        </section>
+                <p className="flex items-center justify-center gap-1 text-center text-[11px] text-slate-500">
+                  <ShieldCheck className="h-3 w-3" />
+                  سيتم تسجيل خروجك من جميع الأجهزة الأخرى بعد تغيير كلمة المرور
+                </p>
+              </div>
+            </form>
+          </main>
+        </div>
       </div>
     </div>
   );
 }
 
-
-function PasswordField({
-  label,
-  icon: Icon,
-  value,
-  onChange,
-  show,
-  onToggleShow,
-  placeholder,
-  delay = 0,
-  disabled = false,
-}) {
+function InfoLine({ icon: Icon, label, value }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay }}
-    >
-      <label
-        className="mb-2 block text-xs font-bold sm:text-sm"
-        style={{ color: "#334155" }}
-      >
+    <div className="flex items-center justify-between gap-2">
+      <span className="font-bold text-slate-900 truncate">{value}</span>
+      <span className="flex items-center gap-1.5 text-slate-500 shrink-0">
+        <Icon className="h-3 w-3" />
         {label}
+      </span>
+    </div>
+  );
+}
+
+function PasswordField({ label, required, value, onChange, show, onToggle, hint, disabled }) {
+  return (
+    <div>
+      <label className="mb-2 block text-right text-xs font-bold text-slate-700">
+        {label} {required && <span className="text-rose-500">*</span>}
       </label>
-
-      <div
-        className="group flex h-12 items-center rounded-2xl border border-slate-200 px-4 transition-all duration-300 hover:border-teal-400/60 hover:bg-white focus-within:border-teal-500 focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(45,212,191,0.10)] sm:h-13"
-        style={{ background: "#f8fafc" }}
-      >
-        <Icon
-          size={17}
-          className="text-slate-400 transition-colors group-hover:text-teal-500 group-focus-within:text-cyan-600"
-        />
-
+      <div className="group relative">
+        <Lock className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
           disabled={disabled}
-          className="h-full w-full bg-transparent px-3 text-right text-sm outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
-          style={{ color: "#0f172a" }}
+          required={required}
+          className="ep-input h-12 pr-11 pl-11"
         />
-
         <button
           type="button"
-          onClick={onToggleShow}
+          onClick={onToggle}
           tabIndex={-1}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-teal-600"
+          className="absolute left-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-teal-600"
         >
-          {show ? <EyeOff size={17} /> : <Eye size={17} />}
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </div>
-    </motion.div>
+      {hint && <p className="mt-1.5 text-right text-[11px] text-slate-500">{hint}</p>}
+    </div>
   );
 }
 
-export default ChangePasswordPage; 
+function PwdRule({ ok, text }) {
+  return (
+    <li className="flex items-center justify-end gap-2 text-[11px]">
+      <span className={ok ? "text-emerald-700 font-bold" : "text-slate-500"}>{text}</span>
+      <CheckCircle2 className={`h-3.5 w-3.5 ${ok ? "text-emerald-600" : "text-slate-300"}`} />
+    </li>
+  );
+}
+
+function computeStrength(p) {
+  if (!p) return { score: 0, label: "", color: "bg-slate-200", text: "#94a3b8" };
+  let s = 0;
+  if (p.length >= 8) s++;
+  if (/[A-Z]/.test(p) && /[a-z]/.test(p)) s++;
+  if (/\d/.test(p)) s++;
+  if (/[^A-Za-z0-9]/.test(p)) s++;
+  const levels = [
+    { label: "ضعيفة جداً", color: "bg-rose-400", text: "#e11d48" },
+    { label: "ضعيفة", color: "bg-orange-400", text: "#ea580c" },
+    { label: "متوسطة", color: "bg-amber-400", text: "#d97706" },
+    { label: "جيدة", color: "bg-teal-400", text: "#0d9488" },
+    { label: "قوية", color: "bg-emerald-500", text: "#059669" },
+  ];
+  return { score: s, ...levels[s] };
+}
+
+export default ChangePasswordPage;

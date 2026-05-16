@@ -1,294 +1,303 @@
-
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { User, Lock, EyeOff, ArrowLeft } from "lucide-react";
+import {
+  Mail, Lock, Eye, EyeOff, ArrowLeft, ShieldCheck,
+  Loader2, AlertCircle, Headphones,
+} from "lucide-react";
 import BrandOrbitLogo from "../shared/BrandOrbitLogo";
-import api from "../services/api"; 
+import { useAuth } from "../context/AuthContext";
+import { useToast } from "../shared/Toast";
+import { extractApiError } from "../shared/helpers";
 
-function LoginPage({ onLogin }) {
+function LoginPage() {
+  const { login } = useAuth();
+  const toast = useToast();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleLogin() {
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+
+  function validate() {
+    let ok = true;
+    if (!email.trim()) {
+      setEmailError("الرجاء إدخال البريد الإلكتروني");
+      ok = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setEmailError("الرجاء إدخال بريد إلكتروني صحيح");
+      ok = false;
+    } else {
+      setEmailError("");
+    }
+
+    if (!password) {
+      setPasswordError("الرجاء إدخال كلمة المرور");
+      ok = false;
+    } else {
+      setPasswordError("");
+    }
+    return ok;
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (loading) return;
     setError("");
+    if (!validate()) return;
     setLoading(true);
     try {
-     
-      const res = await api.post("/auth/login", { email, password });
-
-   
-      const token = res.data.data.token;
-
- 
-      localStorage.setItem("token", token);
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-  
-      onLogin();
+      await login({ email, password });
+      toast.success("تم تسجيل دخولك بنجاح");
     } catch (err) {
-      if (err.response?.status === 401) {
-        setError("البريد أو كلمة المرور غير صحيحة");
-      } else if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else {
-        setError("تعذّر الاتصال بالخادم");
-      }
+      setError(extractApiError(err, "تعذّر تسجيل الدخول"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div
-      className="min-h-screen"
-      dir="rtl"
-      style={{ background: "#f4f6fb", color: "#0f172a" }}
-    >
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1fr_2fr]">
-        {/* Login form side (light) */}
-        <section
-          className="relative order-2 flex min-h-screen items-center justify-center overflow-hidden border-l border-slate-200 px-4 py-8 sm:px-6 md:px-8 lg:order-1 lg:min-h-screen"
-          style={{ background: "#ffffff" }}
-        >
-          <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(45,212,191,0.18)_1px,transparent_1px)] [background-size:18px_18px]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.08),transparent_38%)]" />
+    <div className="min-h-screen" dir="rtl" style={{ background: "#f4f6fb" }}>
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
+        {/* ============ يسار: فورم اللوجين ============ */}
+        <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-4 py-10 sm:px-8 lg:order-2">
+          <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(13,148,136,0.16)_1px,transparent_1px)] [background-size:18px_18px]" />
           <div className="pointer-events-none absolute -bottom-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-teal-300/15 blur-3xl" />
 
           <motion.div
-            className="relative z-10 w-full max-w-[360px] sm:max-w-[380px]"
-            initial={{ opacity: 0, x: -35, scale: 0.98 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ duration: 0.7, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="relative z-10 w-full max-w-[420px]"
           >
-            <div className="mb-6 flex flex-col items-center text-center sm:mb-7">
+            <div className="mb-8 text-center">
               <motion.div
-                className="mb-4"
-                initial={{ opacity: 0, y: -14, scale: 0.92 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
+                initial={{ scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.55, delay: 0.1 }}
+                className="mb-5 inline-block"
               >
-                <BrandOrbitLogo size={76} />
+                <BrandOrbitLogo size={64} />
               </motion.div>
 
               <motion.h1
-                className="text-2xl font-black tracking-tight sm:text-3xl"
-                style={{ color: "#1e293b" }}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.18 }}
+                initial={{ y: 10, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+                className="text-2xl font-black text-slate-900 sm:text-3xl"
               >
-                مرحباً بعودتك
+                مرحباً بك مجدداً
               </motion.h1>
-
               <motion.p
-                className="mt-2 text-xs leading-6 sm:text-sm"
-                style={{ color: "#64748b" }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.28 }}
+                initial={{ y: 10, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+                className="mt-2 text-sm text-slate-500"
               >
-                الرجاء إدخال بيانات الاعتماد للوصول إلى النظام
+                سجّل الدخول للوصول إلى لوحة التحكم
               </motion.p>
-
-              <motion.div
-                className="mt-4 h-[2px] rounded-full bg-gradient-to-l from-transparent via-teal-500 to-transparent"
-                initial={{ width: 0 }}
-                animate={{ width: 78 }}
-                transition={{ duration: 0.7, delay: 0.38 }}
-              />
             </div>
 
-
-            <motion.div
-              className="rounded-[22px] border border-slate-200 p-4 sm:rounded-[24px] sm:p-5"
-              style={{
-                background: "#ffffff",
-                boxShadow:
-                  "0 25px 60px rgba(15,23,42,0.08), 0 1px 0 rgba(15,23,42,0.04)",
-              }}
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.35 }}
+            <motion.form
+              initial={{ y: 18, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.55, delay: 0.4 }}
+              onSubmit={handleSubmit}
+              noValidate
+              className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_25px_60px_rgba(15,23,42,0.06)]"
             >
               {error && (
-                <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700"
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0" />
                   {error}
-                </div>
+                </motion.div>
               )}
 
-              <div className="space-y-4">
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: 0.48 }}
-                >
-                  <label
-                    className="mb-2 block text-xs font-bold sm:text-sm"
-                    style={{ color: "#334155" }}
-                  >
-                    البريد الإلكتروني
-                  </label>
-
-                  <div
-                    className="group flex h-12 items-center rounded-2xl border border-slate-200 px-4 transition-all duration-300 hover:border-teal-400/60 hover:bg-white focus-within:border-teal-500 focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(45,212,191,0.10)] sm:h-13"
-                    style={{ background: "#f8fafc" }}
-                  >
-                    <User
-                      size={17}
-                      className="text-slate-400 transition-colors group-hover:text-teal-500 group-focus-within:text-cyan-600"
-                    />
-
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="owner@example.com"
-                      className="h-full w-full bg-transparent px-3 text-right text-sm outline-none placeholder:text-slate-400"
-                      style={{ color: "#0f172a" }}
-                    />
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: 0.6 }}
-                >
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <label
-                      className="text-xs font-bold sm:text-sm"
-                      style={{ color: "#334155" }}
-                    >
-                      كلمة المرور
-                    </label>
-
-                    <button
-                      type="button"
-                      className="text-[11px] font-bold transition hover:opacity-80 sm:text-xs"
-                      style={{ color: "#0d9488" }}
-                    >
-                      نسيت كلمة المرور؟
-                    </button>
-                  </div>
-
-                  <div
-                    className="group flex h-12 items-center rounded-2xl border border-slate-200 px-4 transition-all duration-300 hover:border-teal-400/60 hover:bg-white focus-within:border-teal-500 focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(45,212,191,0.10)] sm:h-13"
-                    style={{ background: "#f8fafc" }}
-                  >
-                    <Lock
-                      size={17}
-                      className="text-slate-400 transition-colors group-hover:text-teal-500 group-focus-within:text-cyan-600"
-                    />
-
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••••"
-                      className="h-full w-full bg-transparent px-3 text-right text-sm outline-none placeholder:text-slate-400"
-                      style={{ color: "#0f172a" }}
-                    />
-
-                    <EyeOff
-                      size={17}
-                      className="text-slate-400 transition-colors group-hover:text-teal-500 group-focus-within:text-cyan-600"
-                    />
-                  </div>
-                </motion.div>
-
-                <motion.button
-                  type="button"
-                  onClick={handleLogin}
-                  disabled={loading}
-                  className="group relative mt-2 flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl text-sm font-black text-white transition duration-300 hover:scale-[1.015] disabled:cursor-not-allowed disabled:opacity-70 sm:h-13 sm:text-base"
-                  style={{
-                    background: "linear-gradient(to left, #1e293b, #475569)",
-                    boxShadow: "0 14px 30px rgba(30,41,59,0.25)",
-                  }}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: 0.72 }}
-                >
-                  <span className="absolute inset-y-0 -left-20 w-16 rotate-12 bg-white/30 blur-md transition-all duration-700 group-hover:left-[120%]" />
-
-                  <ArrowLeft
-                    size={18}
-                    className="relative z-10 transition-transform group-hover:-translate-x-1"
+              <div>
+                <label className="mb-2 block text-xs font-bold text-slate-700">البريد الإلكتروني</label>
+                <div className="group relative">
+                  <Mail
+                    className={`pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 ${
+                      emailError ? "text-rose-500" : "text-slate-400 group-focus-within:text-teal-600"
+                    }`}
                   />
-
-                  <span className="relative z-10">
-                    {loading ? "جارٍ تسجيل الدخول..." : "تسجيل الدخول"}
-                  </span>
-                </motion.button>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError("");
+                    }}
+                    placeholder="أدخل بريدك الإلكتروني"
+                    autoComplete="email"
+                    className={`h-12 w-full rounded-xl border bg-slate-50 pr-11 pl-4 text-right text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:bg-white focus:bg-white ${
+                      emailError
+                        ? "border-rose-300 focus:border-rose-500 focus:shadow-[0_0_0_4px_rgba(244,63,94,0.12)]"
+                        : "border-slate-200 focus:border-teal-500 focus:shadow-[0_0_0_4px_rgba(13,148,136,0.12)]"
+                    }`}
+                  />
+                </div>
+                {emailError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-rose-600"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    {emailError}
+                  </motion.p>
+                )}
               </div>
-            </motion.div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="text-[11px] font-bold text-[#0f766e] focus:outline-none"
+                  >
+                    نسيت كلمة المرور؟
+                  </button>
+                  <label className="block text-xs font-bold text-slate-700">كلمة المرور</label>
+                </div>
+                <div className="group relative">
+                  <Lock
+                    className={`pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 ${
+                      passwordError ? "text-rose-500" : "text-slate-400 group-focus-within:text-teal-600"
+                    }`}
+                  />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (passwordError) setPasswordError("");
+                    }}
+                    placeholder="أدخل كلمة المرور"
+                    autoComplete="current-password"
+                    className={`h-12 w-full rounded-xl border bg-slate-50 pr-11 pl-11 text-right text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:bg-white focus:bg-white ${
+                      passwordError
+                        ? "border-rose-300 focus:border-rose-500 focus:shadow-[0_0_0_4px_rgba(244,63,94,0.12)]"
+                        : "border-slate-200 focus:border-teal-500 focus:shadow-[0_0_0_4px_rgba(13,148,136,0.12)]"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((p) => !p)}
+                    tabIndex={-1}
+                    className="absolute left-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-teal-600"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {passwordError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-rose-600"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    {passwordError}
+                  </motion.p>
+                )}
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-[#0a1628]">
+                <span className="relative">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="flex h-5 w-5 items-center justify-center rounded border-2 border-[#0a1628] bg-white peer-checked:border-[#0a1628] peer-checked:bg-[#0a1628]">
+                    {remember && (
+                      <svg viewBox="0 0 20 20" className="h-3 w-3 text-white" fill="currentColor">
+                        <path d="M7.629 14.571L4.343 11.286l1.414-1.414L7.63 11.743l6.628-6.628 1.414 1.414z" />
+                      </svg>
+                    )}
+                  </span>
+                </span>
+                <span>تذكّرني</span>
+              </label>
+
+              <motion.button
+                type="submit"
+                disabled={loading}
+                whileTap={{ scale: 0.98 }}
+                className="group relative mt-2 flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-xl text-sm font-black text-white shadow-[0_14px_30px_-8px_rgba(10,22,40,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70"
+                style={{ background: "linear-gradient(to left, #0a1628, #1e2a44)" }}
+              >
+                <span className="pointer-events-none absolute inset-y-0 -left-20 w-16 rotate-12 bg-white/30 blur-md transition-all duration-700 group-hover:left-[120%]" />
+                {loading ? (
+                  <Loader2 className="relative z-10 h-5 w-5 animate-spin" />
+                ) : (
+                  <ArrowLeft className="relative z-10 h-5 w-5 transition-transform group-hover:-translate-x-1" />
+                )}
+                <span className="relative z-10">{loading ? "جارٍ تسجيل الدخول..." : "تسجيل الدخول"}</span>
+              </motion.button>
+
+              <div className="relative my-2">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-3 text-[10px] font-bold text-slate-400">أو</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                <Headphones className="h-4 w-4" />
+                <div className="text-right">
+                  <p className="font-bold">هل تواجه مشكلة في تسجيل الدخول؟</p>
+                  <p className="text-[11px] text-slate-400">تواصل مع الدعم الفني</p>
+                </div>
+              </button>
+            </motion.form>
 
             <motion.p
-              className="mt-6 text-center text-[11px] sm:mt-7 sm:text-xs"
-              style={{ color: "#94a3b8" }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.82 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.7 }}
+              className="mt-6 flex flex-col items-center justify-center gap-2 text-center text-[11px] text-slate-400"
             >
-              Exchange Vortex © 2024 — نظام إدارة الصرافة
+              <span>جميع الحقوق محفوظة © {new Date().getFullYear()} نظام إدارة الصرافة</span>
+              <span className="inline-flex items-center gap-1 text-teal-600">
+                <ShieldCheck className="h-3 w-3" />
+                <span className="font-bold">آمن وموثوق</span>
+              </span>
             </motion.p>
           </motion.div>
         </section>
 
-        {/* Hero side (dark navy) */}
+        {/* ============ يمين: الـ hero (الصورة تملأ كل الخلفية + كفة ناعمة) ============ */}
         <section
-          className="relative order-1 flex min-h-[46vh] items-center justify-center overflow-hidden px-4 py-12 text-white sm:min-h-[52vh] sm:px-6 md:px-8 lg:order-2 lg:min-h-screen lg:px-10 xl:px-16"
-          style={{ background: "#1e293b" }}
+          className="relative hidden min-h-screen w-full items-center justify-center overflow-hidden lg:order-1 lg:flex lg:rounded-l-[1.75rem]"
+          style={{ background: "#0a1628" }}
         >
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,#1e293b_0%,#334155_50%,#1e293b_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(45,212,191,0.18),transparent_30%)]" />
-
-          <motion.div
-            className="relative z-10 mx-auto w-full max-w-xl px-2 text-center sm:max-w-2xl lg:max-w-3xl"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+          <motion.img
+            initial={{ opacity: 0, scale: 1.02 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
-          >
-            <motion.div
-              className="mb-4 inline-flex items-center gap-2 rounded-full border border-teal-400/25 px-3 py-1.5 text-[11px] font-bold sm:mb-5 sm:px-4 sm:py-2 sm:text-xs"
-              style={{ background: "rgba(20,184,166,0.10)", color: "#5eead4" }}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              <span className="h-2 w-2 rounded-full bg-teal-400" />
-              منصة الصرافة المؤسسية
-            </motion.div>
-
-            <motion.h2
-              className="text-3xl font-black leading-[1.25] text-white sm:text-4xl md:text-5xl xl:text-6xl"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.65, delay: 0.28 }}
-            >
-              الدقة في
-              <br />
-              <span style={{ color: "#2dd4bf" }}>الأسواق العالمية</span>
-            </motion.h2>
-
-            <motion.p
-              className="mx-auto mt-5 max-w-lg text-sm leading-7 sm:mt-7 sm:text-base sm:leading-8 md:max-w-2xl md:text-[17px] md:leading-9"
-              style={{ color: "#cbd5e1" }}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.65, delay: 0.4 }}
-            >
-              منصة مؤسسية متطورة لإدارة الصرافة، تمنحك تحكماً مطلقاً ورؤية
-              دقيقة في تعقيدات الأسواق المالية.
-            </motion.p>
-          </motion.div>
+            src="/login-hero-bg-right.png"
+            alt="نظام إدارة الصرافة"
+            className="absolute inset-0 h-full w-full object-cover object-center"
+            draggable={false}
+          />
         </section>
       </div>
     </div>
   );
 }
-
+////////
 export default LoginPage;

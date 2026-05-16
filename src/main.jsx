@@ -5,8 +5,6 @@ import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <div dir="rtl">
-      <App />
-    </div>
+    <App />
   </React.StrictMode>
 );

@@ -1,190 +1,142 @@
-import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  ArrowRightLeft,
-  BadgePlus,
-  BanknoteArrowDown,
-  ChartNoAxesColumnIncreasing,
-  KeyRound,
-  LayoutDashboard,
-  Loader2,
-  LogOut,
-  UserRoundCheck,
+  Home, UserRound, ArrowLeftRight, PlusCircle, Wallet, DollarSign,
+  TrendingUp, BarChart3, Bell, Archive, ShieldCheck,
+  KeyRound, Settings, LogOut,
 } from "lucide-react";
-
 import BrandOrbitLogo from "../../shared/BrandOrbitLogo";
-import api from "../../services/api"; 
+import { useAuth } from "../../context/AuthContext";
 
-
-const navItems = [
-  { label: "الرئيسية", path: "/dashboard", icon: LayoutDashboard },
-  { label: "العملاء", path: "/customers", icon: UserRoundCheck },
-  { label: "الحركات", path: "/transactions", icon: ArrowRightLeft },
-  { label: "إضافة عملية", path: "/add-transaction", icon: BadgePlus },
-  { label: "التقارير", path: "/reports", icon: ChartNoAxesColumnIncreasing },
+const SECTIONS = [
+  {
+    label: "الرئيسية",
+    items: [{ to: "/dashboard", label: "لوحة التحكم", icon: Home }],
+  },
+  {
+    label: "النظام والإدارة",
+    items: [
+      { to: "/customers", label: "العملاء", icon: UserRound },
+      { to: "/transactions", label: "المعاملات", icon: ArrowLeftRight },
+      { to: "/add-transaction", label: "إضافة معاملة", icon: PlusCircle },
+      { to: "/funds", label: "الحسابات والصناديق", icon: Wallet },
+      { to: "/currencies", label: "العملات", icon: DollarSign },
+      { to: "/exchange-rates", label: "أسعار الصرف", icon: TrendingUp },
+      { to: "/reports", label: "التقارير", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "المتابعة والتنبيهات",
+    items: [
+      { to: "/notifications", label: "الإشعارات", icon: Bell, badge: true },
+      { to: "/archive", label: "الأرشيف", icon: Archive },
+    ],
+  },
+  {
+    label: "الإعدادات",
+    items: [
+      { to: "/users", label: "المستخدمون والصلاحيات", icon: ShieldCheck, adminOnly: true },
+      { to: "/change-password", label: "تغيير كلمة المرور", icon: KeyRound },
+      { to: "/settings", label: "الإعدادات", icon: Settings, adminOnly: true },
+    ],
+  },
 ];
 
-function Sidebar() {
+function Sidebar({ onClose, unreadCount = 0 }) {
   const navigate = useNavigate();
-  const [loggingOut, setLoggingOut] = useState(false);
-
-
-  async function handleLogout() {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-   
-      await api.post("/auth/logout");
-    } catch {
-   
-    }
- 
-    localStorage.removeItem("token");
-    delete api.defaults.headers.common["Authorization"];
-  
-    window.location.href = "/login";
-  }
+  const { logout, isAdmin } = useAuth();
 
   return (
-    <motion.aside
-      initial={{ x: 30, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed right-0 top-0 z-40 hidden h-screen w-64 flex-col border-l border-slate-800 bg-[#1e293b] text-slate-200 xl:flex"
+    <aside
+      className="relative flex h-screen w-72 flex-col overflow-hidden text-slate-200"
+      style={{ background: "hsl(212, 96%, 11%)" }}
+      dir="rtl"
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.10),transparent_45%),radial-gradient(circle_at_bottom_left,rgba(13,148,136,0.08),transparent_45%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_top_right,rgba(13,148,136,0.14),transparent_55%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.08),transparent_50%)]" />
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 right-0 h-64 opacity-25"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 20% 80%, rgba(180, 144, 76, 0.18) 0%, transparent 45%), radial-gradient(circle at 75% 95%, rgba(190, 130, 60, 0.12) 0%, transparent 50%)",
+        }}
+      />
 
       <motion.div
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-        className="relative border-b border-white/5 p-5"
+        transition={{ duration: 0.5 }}
+        className="relative border-b border-white/5 px-5 py-5"
       >
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-teal-400/25 bg-teal-500/10 shadow-[0_0_24px_rgba(20,184,166,0.18)] transition-all duration-300 hover:scale-105 hover:border-teal-400/45">
-            <BrandOrbitLogo size={44} withGlow={false} />
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-teal-400/25 bg-teal-500/10 shadow-[0_0_24px_rgba(13,148,136,0.18)]">
+            <BrandOrbitLogo size={42} withGlow={false} />
           </div>
-
-          <div>
-            <h2 className="text-xl font-black leading-5 text-white">
-              Exchange Pro
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">نظام إدارة الصرافة</p>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-black leading-5 text-white truncate">نظام إدارة الصرافة</h2>
+            <p className="mt-1 text-[12px] text-slate-400">لوحة الإدارة</p>
           </div>
         </div>
       </motion.div>
 
-      <nav className="relative flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item, index) => {
-          const Icon = item.icon;
+      <nav className="relative flex-1 overflow-y-auto px-3 py-4">
+        {SECTIONS.map((section) => {
+          const items = section.items.filter((it) => !it.adminOnly || isAdmin);
+          if (items.length === 0) return null;
 
           return (
-            <motion.div
-              key={item.path}
-              initial={{ x: 18, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{
-                duration: 0.4,
-                delay: 0.15 + index * 0.045,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-            >
-              <NavLink
-                to={item.path}
-                className={({ isActive }) =>
-                  [
-                    "group relative flex w-full items-center justify-between overflow-hidden rounded-xl px-4 py-3 text-sm font-bold transition-all duration-300 ease-out",
-                    isActive
-                      ? "bg-white/[0.07] text-white shadow-[inset_0_0_0_1px_rgba(20,184,166,0.28)]"
-                      : "text-slate-400 hover:translate-x-[-2px] hover:bg-white/[0.05] hover:text-white",
-                  ].join(" ")
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {isActive && (
-                      <motion.span
-                        layoutId="sidebar-active-indicator"
-                        className="absolute right-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-l-full bg-gradient-to-b from-teal-300 to-teal-600 shadow-[0_0_12px_rgba(20,184,166,0.65)]"
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
-
-                    <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-l from-transparent via-teal-400/[0.07] to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-
-                    <span className="relative z-10">{item.label}</span>
-
-                    <Icon
-                      className={[
-                        "relative z-10 h-5 w-5 transition-all duration-300",
-                        isActive
-                          ? "scale-110 text-teal-300"
-                          : "group-hover:scale-110 group-hover:text-teal-300",
-                      ].join(" ")}
-                    />
-                  </>
-                )}
-              </NavLink>
-            </motion.div>
+            <div key={section.label} className="mb-2">
+              <p className="ep-sidebar-section">{section.label}</p>
+              <ul className="space-y-1">
+                {items.map((item, idx) => {
+                  const Icon = item.icon;
+                  return (
+                    <motion.li
+                      key={item.to}
+                      initial={{ x: 12, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ duration: 0.3, delay: idx * 0.03 }}
+                    >
+                      <NavLink
+                        to={item.to}
+                        onClick={onClose}
+                        className={({ isActive }) => `ep-sidebar-link ${isActive ? "active" : ""}`}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <Icon className={`h-[18px] w-[18px] ${isActive ? "text-white" : "text-slate-400"}`} />
+                              <span>{item.label}</span>
+                            </div>
+                            {item.badge && unreadCount > 0 && (
+                              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-black text-white">
+                                {unreadCount > 99 ? "99+" : unreadCount}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </NavLink>
+                    </motion.li>
+                  );
+                })}
+              </ul>
+            </div>
           );
         })}
       </nav>
 
-      <motion.div
-        initial={{ y: 14, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.55 }}
-        className="relative border-t border-white/5 p-3"
-      >
-        <NavLink
-          to="/add-transaction"
-          className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl bg-white/5 px-4 py-3 text-xs font-bold text-slate-200 ring-1 ring-white/10 transition-colors duration-200 hover:bg-white/10 hover:text-white"
-        >
-          <BanknoteArrowDown className="h-4 w-4" />
-          <span>إضافة عملية جديدة</span>
-        </NavLink>
-
+      <div className="relative border-t border-white/10 p-3">
         <button
           type="button"
-          onClick={() => navigate("/change-password")}
-          className="group mb-2 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-400 transition-all duration-300 hover:bg-white/[0.05] hover:text-white"
+          onClick={logout}
+          className="ep-sidebar-link w-full justify-start hover:bg-rose-500/15 hover:text-rose-200"
         >
-          <KeyRound className="h-4 w-4 transition-transform duration-300 group-hover:rotate-12" />
-          تغيير كلمة المرور
+          <div className="flex items-center gap-3">
+            <LogOut className="h-[18px] w-[18px]" />
+            <span>تسجيل الخروج</span>
+          </div>
         </button>
-
-        <button
-          type="button"
-          onClick={handleLogout}
-          disabled={loggingOut}
-          className="group flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-rose-300 transition-all duration-300 hover:bg-rose-500/10 hover:text-rose-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {loggingOut ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <LogOut className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5" />
-          )}
-          {loggingOut ? "جارٍ الخروج..." : "تسجيل الخروج"}
-        </button>
-      </motion.div>
-    </motion.aside>
-  );
-}
-
-export function MobileBrand() {
-  return (
-    <div className="flex items-center justify-center py-4 xl:hidden">
-      <div className="flex flex-col items-center text-center">
-        <BrandOrbitLogo size={82} />
-
-        <h2 className="mt-2 text-lg font-black text-teal-600 sm:text-xl">
-          Exchange Pro
-        </h2>
-
-        <p className="mt-0.5 text-xs text-slate-500">نظام إدارة الصرافة</p>
       </div>
-    </div>
+    </aside>
   );
 }
 

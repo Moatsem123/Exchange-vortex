@@ -1,534 +1,906 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  Activity,
-  ArrowDown,
-  ArrowUp,
-  CirclePlus,
-  Wallet,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import AnimatedNumber from "../shared/AnimatedNumber";
-import ScrollReveal from "../shared/ScrollReveal";
-import dashboardService from "../services/dashboard";
+import {
+  ArrowRightLeft,
+  Wallet,
+  TrendingUp,
+  Activity,
+  ChevronLeft,
+  Plus,
+  DollarSign,
+  AlertTriangle,
+  CheckCircle2,
+  CloudUpload,
+} from "lucide-react";
 
-// Period filter options
+import StatCard from "../shared/StatCard";
+import EmptyState from "../shared/EmptyState";
+import ErrorState from "../shared/ErrorState";
+import Badge from "../shared/Badge";
+import ScrollReveal from "../shared/ScrollReveal";
+import AddBalanceModal from "../shared/AddBalanceModal";
+import { useToast } from "../shared/Toast";
+import dashboardService from "../services/dashboard";
+import transactionsService from "../services/transactions";
+import {
+  formatRelative,
+  getTransactionTypeMeta,
+  unwrapList,
+} from "../shared/helpers";
+
 const PERIODS = [
-  { key: "1d", label: "اليوم" },
   { key: "7d", label: "آخر 7 أيام" },
-  { key: "30d", label: "آخر شهر" },
+  { key: "30d", label: "آخر 30 يوم" },
+  { key: "1d", label: "اليوم" },
 ];
 
+const BALANCE_KEY = "ep_general_balance_v1";
 
-function buildStats(s) {
-  if (!s) return defaultStats;
-  return [
-    {
-      title: "الصافي",
-      value: s.net_today ?? s.net ?? 0,
-      prefix: "$",
-      note: "فائض نقدي متاح",
-      change: s.net_change || "+0%",
-      icon: Activity,
-      color: "cyan",
-    },
-    {
-      title: "إجمالي التسليم",
-      value: s.delivered_today ?? s.delivered ?? 0,
-      prefix: "$",
-      note: "معدل مستقر",
-      change: s.delivered_change || "+0%",
-      icon: ArrowUp,
-      color: "rose",
-    },
-    {
-      title: "إجمالي الاستلام",
-      value: s.received_today ?? s.received ?? 0,
-      prefix: "$",
-      note: "معدل إيجابي",
-      change: s.received_change || "+0%",
-      icon: ArrowDown,
-      color: "blue",
-    },
-    {
-      title: "الرصيد الحالي",
-      value: s.total_balance ?? s.balance ?? 0,
-      prefix: "$",
-      note: "هذا الأسبوع",
-      change: s.balance_change || "+0%",
-      icon: Wallet,
-      color: "violet",
-    },
-  ];
+function readBalance() {
+  try {
+    const v = Number(localStorage.getItem(BALANCE_KEY));
+    return isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
 }
 
+function writeBalance(v) {
+  try {
+    localStorage.setItem(BALANCE_KEY, String(Number(v) || 0));
+  } catch {}
+}
 
-const defaultStats = [
-  { title: "الصافي", value: 400000, prefix: "$", note: "فائض نقدي متاح", change: "+4.2%", icon: Activity, color: "cyan" },
-  { title: "إجمالي التسليم", value: 850000, prefix: "$", note: "معدل مستقر", change: "+2.1%", icon: ArrowUp, color: "rose" },
-  { title: "إجمالي الاستلام", value: 1250000, prefix: "$", note: "معدل إيجابي", change: "+7.8%", icon: ArrowDown, color: "blue" },
-  { title: "الرصيد الحالي", value: 24500000, prefix: "$", note: "هذا الأسبوع", change: "+2.4%", icon: Wallet, color: "violet" },
-];
+function normalizeChartResponse(response) {
+  const payload = response?.data || response || {};
 
-const defaultChart = [
-  { day: "اليوم", received: 95, delivered: 60 },
-  { day: "الخميس", received: 70, delivered: 45 },
-  { day: "الأربعاء", received: 85, delivered: 70 },
-  { day: "الثلاثاء", received: 60, delivered: 40 },
-  { day: "الإثنين", received: 75, delivered: 55 },
-  { day: "الأحد", received: 55, delivered: 35 },
-  { day: "السبت", received: 80, delivered: 65 },
-];
+  if (Array.isArray(payload)) {
+    return payload;
+  }
 
-const rates = [
-  { pair: "USD/SAR", value: "3.7510", change: "+0.12%", flag: "US" },
-  { pair: "EUR/SAR", value: "4.0850", change: "+0.15%", flag: "EU" },
-  { pair: "TRY/SAR", value: "0.1150", change: "-0.00%", flag: "TR" },
-  { pair: "GBP/SAR", value: "4.7200", change: "+0.11%", flag: "GB" },
-];
+  if (Array.isArray(payload.labels)) {
+    return payload.labels.map((label, index) => ({
+      label,
+      date: payload.dates?.[index] || label,
+      received: Number(
+        payload.received?.[index] ??
+          payload.receive?.[index] ??
+          payload.deposits?.[index] ??
+          payload.income?.[index] ??
+          0
+      ),
+      delivered: Number(
+        payload.delivered?.[index] ??
+          payload.send?.[index] ??
+          payload.withdrawals?.[index] ??
+          payload.outcome?.[index] ??
+          0
+      ),
+      net: Number(payload.net?.[index] ?? 0),
+      count: Number(
+        payload.count?.[index] ??
+          payload.transactions?.[index] ??
+          payload.transactions_count?.[index] ??
+          0
+      ),
+    }));
+  }
 
-const recentTxns = [
-  { id: "TRX-001#", client: "شركة الأفق للتجارة", type: "استلام", amount: "150,000", currency: "USD", status: "مكتمل" },
-  { id: "TRX-002#", client: "مؤسسة النور", type: "تسليم", amount: "75,000", currency: "EUR", status: "معلق" },
-  { id: "TRX-003#", client: "أحمد المحمود", type: "استلام", amount: "20,000", currency: "TRY", status: "مكتمل" },
-];
+  if (Array.isArray(payload.chart)) {
+    return payload.chart;
+  }
 
+  if (Array.isArray(payload.items)) {
+    return payload.items;
+  }
 
-const containerStagger = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
-};
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 18 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
-};
+  return [];
+}
 
 function DashboardPage() {
-  const navigate = useNavigate();
-  const [stats, setStats] = useState(defaultStats);
-  const [chartData, setChartData] = useState(defaultChart);
-  const [period, setPeriod] = useState("7d"); // 1d | 7d | 30d
+  const toast = useToast();
+
+  const [period, setPeriod] = useState("7d");
+  const [summary, setSummary] = useState(null);
+  const [chart, setChart] = useState([]);
+  const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Refetch on period change
-  useEffect(() => {
-    let cancelled = false;
+  const [balance, setBalance] = useState(readBalance());
+  const [showAdd, setShowAdd] = useState(false);
 
-    async function loadDashboard() {
-      try {
-        setLoading(true);
-        const [summaryRes, chartRes] = await Promise.all([
-          dashboardService.summary(period).catch((e) => {
-            console.warn("summary error:", e);
-            return null;
-          }),
-          dashboardService.chart(period).catch((e) => {
-            console.warn("chart error:", e);
-            return null;
-          }),
+  async function load() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [summaryResponse, chartResponse, transactionsResponse] =
+        await Promise.all([
+          dashboardService.summary(period).catch(() => null),
+          dashboardService.chart(period).catch(() => null),
+          transactionsService.list({ per_page: 8 }).catch(() => null),
         ]);
 
-        if (cancelled) return;
-
-        if (summaryRes) {
-          setStats(buildStats(summaryRes.data || summaryRes));
-        }
-        if (chartRes) {
-          const arr = chartRes.data || chartRes;
-          if (Array.isArray(arr) && arr.length > 0) setChartData(arr);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      setSummary(summaryResponse?.data || summaryResponse || null);
+      setChart(normalizeChartResponse(chartResponse));
+      setRecent(unwrapList(transactionsResponse).items.slice(0, 8));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
     }
+  }
 
-    loadDashboard();
-    return () => {
-      cancelled = true;
-    };
+  useEffect(() => {
+    load();
   }, [period]);
+
+  const stats = useMemo(() => buildStats(summary, balance), [summary, balance]);
+  const distribution = useMemo(() => computeDistribution(recent), [recent]);
+
+  function handleAddBalance({ amount }) {
+    const next = balance + Number(amount);
+
+    setBalance(next);
+    writeBalance(next);
+
+    toast.success("تم إضافة الرصيد محليًا فقط - لم يتم حفظه في قاعدة البيانات");
+  }
 
   return (
     <div className="space-y-5">
-      {/* Page header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <ScrollReveal>
-          <div className="min-w-0 text-right">
-            <h1 className="text-2xl font-black leading-tight text-slate-900 sm:text-3xl lg:text-4xl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700">
+            <Activity className="h-6 w-6" />
+          </div>
+
+          <div className="text-right">
+            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">
               لوحة التحكم
             </h1>
-            <p className="mt-1 text-xs leading-6 text-slate-500 sm:text-sm">
-              نظرة عامة على أداء الصرافة
+            <p className="text-xs text-slate-500 sm:text-sm">
+              نظرة عامة على أداء النظام والأنشطة الرئيسية
             </p>
           </div>
-        </ScrollReveal>
+        </div>
 
-        <ScrollReveal delay={0.08}>
-          <div className="flex shrink-0 items-center gap-2">
-        
-            <PeriodSelector period={period} onChange={setPeriod} />
-
-            <button
-              type="button"
-              onClick={() => navigate("/add-transaction")}
-              className="whitespace-nowrap rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-bold text-white transition-colors duration-200 hover:bg-slate-700 active:bg-slate-900 sm:px-5 sm:py-3 sm:text-sm"
-            >
-              + إضافة عملية
-            </button>
-          </div>
-        </ScrollReveal>
+        <button
+          type="button"
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black text-white transition"
+          style={{ background: "hsl(179, 87%, 28%)" }}
+        >
+          <Plus className="h-4 w-4" />
+          إضافة رصيد
+        </button>
       </div>
 
-      {/* Stats */}
-      <motion.section
-        key={period} // Re-trigger animation on filter change
-        variants={containerStagger}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4"
-      >
-        {stats.map((item) => (
-          <motion.div key={item.title} variants={fadeUp}>
-            <StatCard item={item} loading={loading} />
-          </motion.div>
-        ))}
-      </motion.section>
-
-      {/* Main content */}
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-4">
-          <ScrollReveal delay={0.1}>
-            <FinancialChart data={chartData} period={period} />
-          </ScrollReveal>
-          <ScrollReveal delay={0.14}>
-            <RecentTransactions />
-          </ScrollReveal>
+      {error && !loading ? (
+        <div className="ep-card-static">
+          <ErrorState title="تعذّر تحميل البيانات" onRetry={load} />
         </div>
+      ) : (
+        <>
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {stats.map((s, idx) => (
+              <StatCard
+                key={s.title}
+                {...s}
+                loading={loading}
+                delay={idx * 0.06}
+              />
+            ))}
+          </section>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 xl:auto-rows-fr">
-          <ScrollReveal delay={0.08} className="h-full">
-            <QuickActions />
-          </ScrollReveal>
-          <ScrollReveal delay={0.12} className="h-full">
-            <ExchangeRates />
-          </ScrollReveal>
-        </div>
-      </section>
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1.6fr]">
+            <ScrollReveal>
+              <div className="ep-card-static h-full">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                  <h3 className="text-base font-black text-slate-900">
+                    أحدث المعاملات
+                  </h3>
+
+                  <Link
+                    to="/transactions"
+                    className="flex items-center gap-1 text-xs font-bold text-teal-600 transition hover:text-teal-800"
+                  >
+                    عرض جميع المعاملات
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+
+                <RecentTransactionsList items={recent} loading={loading} />
+              </div>
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.1}>
+              <div className="ep-card-static h-full p-5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-right">
+                    <h3 className="text-base font-black text-slate-900">
+                      الحركة اليومية (صافي الحركة)
+                    </h3>
+                  </div>
+
+                  <PeriodSelector value={period} onChange={setPeriod} />
+                </div>
+
+                <LineChart data={chart} loading={loading} />
+              </div>
+            </ScrollReveal>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <ScrollReveal>
+              <div className="ep-card-static h-full p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-base font-black text-slate-900">
+                    تنبيهات النظام
+                  </h3>
+
+                  <Link
+                    to="/notifications"
+                    className="text-[11px] font-bold text-teal-600 transition hover:text-teal-800"
+                  >
+                    عرض جميع التنبيهات
+                  </Link>
+                </div>
+
+                <SystemAlerts loading={loading} />
+              </div>
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.05}>
+              <div className="ep-card-static h-full p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-right text-base font-black text-slate-900">
+                    أداء الفروع
+                  </h3>
+
+                  <select className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-600 outline-none">
+                    <option>هذا الشهر</option>
+                    <option>الشهر الماضي</option>
+                  </select>
+                </div>
+
+                <BranchPerformance loading={loading} />
+              </div>
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.1}>
+              <div className="ep-card-static h-full p-5">
+                <h3 className="mb-4 text-right text-base font-black text-slate-900">
+                  توزيع المعاملات حسب النوع
+                </h3>
+
+                <DonutDistribution data={distribution} loading={loading} />
+              </div>
+            </ScrollReveal>
+          </section>
+        </>
+      )}
+
+      <AddBalanceModal
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        onSubmit={handleAddBalance}
+        currentBalance={balance}
+      />
     </div>
   );
 }
 
-
-function PeriodSelector({ period, onChange }) {
+function PeriodSelector({ value, onChange }) {
   return (
     <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
-      {PERIODS.map((p) => {
-        const active = period === p.key;
+      {PERIODS.map((p) => (
+        <button
+          key={p.key}
+          type="button"
+          onClick={() => onChange(p.key)}
+          className={[
+            "rounded-lg px-3 py-1.5 text-[11px] font-bold transition",
+            value === p.key
+              ? "bg-slate-800 text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          ].join(" ")}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function buildStats(s, generalBalance) {
+  const total = s?.total_summary || {};
+
+  const totalTx = Number(
+    total?.count ??
+      s?.transactions_count ??
+      s?.total_transactions ??
+      0
+  );
+
+  const totalIn = Number(
+    total?.receive ??
+      s?.received ??
+      s?.deposits ??
+      s?.total_deposits ??
+      0
+  );
+
+  const net = Number(
+    total?.net ??
+      s?.net ??
+      s?.net_today ??
+      0
+  );
+
+  const totalBalance = Number(
+    s?.total_balance_usd ??
+      s?.my_vault_balance ??
+      generalBalance ??
+      0
+  );
+
+  return [
+    {
+      title: "صافي الحركة",
+      value: net,
+      prefix: "$",
+      icon: TrendingUp,
+      color: "emerald",
+      change: s?.net_change || null,
+      changeDir: getChangeDir(s?.net_change_dir, s?.net_change),
+      note: "إجمالي صافي الحركة",
+      decimals: 2,
+    },
+    {
+      title: "إجمالي الأرصدة",
+      value: totalBalance,
+      prefix: "$",
+      icon: Wallet,
+      color: "amber",
+      change: s?.balance_change || null,
+      changeDir: getChangeDir(s?.balance_change_dir, s?.balance_change),
+      note: "إجمالي الرصيد الحالي",
+      decimals: 2,
+    },
+    {
+      title: "إجمالي الإيرادات",
+      value: totalIn,
+      prefix: "$",
+      icon: DollarSign,
+      color: "teal",
+      change: s?.received_change || null,
+      changeDir: getChangeDir(s?.received_change_dir, s?.received_change),
+      note: "إجمالي الإيداعات",
+      decimals: 2,
+    },
+    {
+      title: "إجمالي المعاملات",
+      value: totalTx,
+      icon: ArrowRightLeft,
+      color: "violet",
+      change: s?.transactions_change || null,
+      changeDir: getChangeDir(
+        s?.transactions_change_dir,
+        s?.transactions_change
+      ),
+      note: "كل المعاملات",
+    },
+  ];
+}
+
+function getChangeDir(explicit, value) {
+  if (explicit === "up" || explicit === "down") return explicit;
+  if (typeof value === "string" && value.startsWith("-")) return "down";
+  return "up";
+}
+
+function LineChart({ data, loading }) {
+  if (loading) return <div className="ep-skeleton h-72 w-full" />;
+
+  if (!data || data.length === 0) {
+    return (
+      <EmptyState
+        title="لا توجد بيانات"
+        description="لم يتم تسجيل أي حركة خلال هذه الفترة"
+      />
+    );
+  }
+
+  const points = data.slice(0, 14).map((d) => {
+    const received = Number(d.received ?? d.receive ?? d.deposits ?? 0);
+    const delivered = Number(
+      d.delivered ?? d.send ?? d.withdrawals ?? d.outcome ?? 0
+    );
+
+    return {
+      label: d.day || d.label || d.date || "",
+      net:
+        d.net !== undefined && d.net !== null
+          ? Number(d.net)
+          : received - delivered,
+      count: Number(d.count ?? d.transactions_count ?? d.transactions ?? 0),
+    };
+  });
+
+  const hasRealData = points.some((p) => p.net !== 0 || p.count !== 0);
+
+  if (!hasRealData) {
+    return (
+      <EmptyState
+        title="لا توجد حركة كافية"
+        description="كل قيم الرسم البياني تساوي صفر خلال هذه الفترة"
+      />
+    );
+  }
+
+  const w = 700;
+  const h = 240;
+  const padTop = 16;
+  const padBottom = 32;
+  const padX = 36;
+
+  const maxNet = Math.max(...points.map((p) => Math.abs(p.net)), 1);
+  const maxCount = Math.max(...points.map((p) => p.count), 1);
+  const innerH = h - padTop - padBottom;
+
+  const xFor = (i) =>
+    points.length === 1
+      ? w / 2
+      : padX + (i * (w - padX * 2)) / (points.length - 1);
+
+  const yNet = (v) =>
+    padTop + innerH - ((v / maxNet) * innerH) / 2 - innerH / 2;
+
+  const yCount = (v) => padTop + innerH - (v / maxCount) * innerH;
+
+  const pathNet = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yNet(p.net)}`)
+    .join(" ");
+
+  const areaNet = `${pathNet} L ${xFor(points.length - 1)} ${
+    padTop + innerH
+  } L ${xFor(0)} ${padTop + innerH} Z`;
+
+  const pathCount = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yCount(p.count)}`)
+    .join(" ");
+
+  return (
+    <div className="relative">
+      <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />
+          عدد المعاملات
+        </span>
+
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          صافي الحركة (USD)
+        </span>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="h-72 w-full"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="netFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {[0.25, 0.5, 0.75].map((p) => (
+          <line
+            key={p}
+            x1={padX}
+            x2={w - padX}
+            y1={padTop + innerH * p}
+            y2={padTop + innerH * p}
+            stroke="#e2e8f0"
+            strokeDasharray="3 4"
+          />
+        ))}
+
+        <motion.path
+          d={areaNet}
+          fill="url(#netFill)"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.8 }}
+        />
+
+        <motion.path
+          d={pathNet}
+          fill="none"
+          stroke="#10b981"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1, ease: "easeInOut" }}
+        />
+
+        <motion.path
+          d={pathCount}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1, delay: 0.15, ease: "easeInOut" }}
+        />
+
+        {points.map((p, i) => (
+          <g key={i}>
+            <circle
+              cx={xFor(i)}
+              cy={yNet(p.net)}
+              r="3.5"
+              fill="#fff"
+              stroke="#10b981"
+              strokeWidth="2"
+            />
+
+            <circle
+              cx={xFor(i)}
+              cy={yCount(p.count)}
+              r="3.5"
+              fill="#fff"
+              stroke="#3b82f6"
+              strokeWidth="2"
+            />
+
+            <text
+              x={xFor(i)}
+              y={h - 10}
+              textAnchor="middle"
+              className="fill-slate-400"
+              fontSize="10"
+            >
+              {p.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function RecentTransactionsList({ items, loading }) {
+  if (loading) {
+    return (
+      <div className="space-y-2 p-4">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="ep-skeleton h-14" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!items?.length) {
+    return <EmptyState title="لا توجد معاملات حديثة" />;
+  }
+
+  return (
+    <div className="divide-y divide-slate-100">
+      {items.map((t) => {
+        const type = getTransactionTypeMeta(t.type);
+        const isOut = ["send", "withdraw", "withdrawal"].includes(t.type);
+
         return (
-          <button
-            key={p.key}
-            type="button"
-            onClick={() => onChange(p.key)}
-            className={[
-              "whitespace-nowrap rounded-lg px-3 py-2 text-[11px] font-bold transition-all duration-200 sm:text-xs",
-              active
-                ? "bg-slate-800 text-white shadow-sm"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-            ].join(" ")}
+          <div
+            key={t.id}
+            className="flex items-center justify-between px-5 py-3.5"
           >
-            {p.label}
-          </button>
+            <Badge color={type.color}>{type.label}</Badge>
+
+            <div className="flex flex-1 flex-col items-center text-center">
+              <p className="text-sm font-black tabular-nums text-slate-900">
+                {isOut ? "-" : "+"}
+                {Number(t.amount).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{" "}
+                <span className="text-xs text-slate-500">
+                  {t.currency_code || t.currency || "USD"}
+                </span>
+              </p>
+            </div>
+
+            <div className="text-right">
+              <p
+                dir="ltr"
+                className="font-mono text-xs font-bold text-slate-700"
+              >
+                {t.reference_number || t.code || `TXN-${t.id}`}
+              </p>
+
+              <p className="mt-0.5 text-[10px] text-slate-400">
+                {formatRelative(t.created_at || t.transaction_date)}
+              </p>
+            </div>
+          </div>
         );
       })}
     </div>
   );
 }
 
+function computeDistribution(items) {
+  const counts = {
+    receive: 0,
+    send: 0,
+    transfer: 0,
+    exchange: 0,
+    other: 0,
+  };
 
-function StatCard({ item, loading }) {
-  const Icon = item.icon;
+  const labels = {
+    receive: "إيداعات",
+    send: "سحوبات",
+    transfer: "تحويلات",
+    exchange: "مصروفات",
+    other: "أخرى",
+  };
 
   const colors = {
-    cyan: { fill: "#f0fdfa", border: "#99f6e4", text: "#0d9488", glow: "rgba(45,212,191,0.22)" },
-    blue: { fill: "#ecfeff", border: "#a5f3fc", text: "#0891b2", glow: "rgba(34,211,238,0.20)" },
-    rose: { fill: "#f0fdfa", border: "#5eead4", text: "#0f766e", glow: "rgba(45,212,191,0.22)" },
-    violet: { fill: "#ccfbf1", border: "#5eead4", text: "#115e59", glow: "rgba(20,184,166,0.20)" },
+    receive: "#10b981",
+    send: "#ef4444",
+    transfer: "#3b82f6",
+    exchange: "#f59e0b",
+    other: "#94a3b8",
   };
-  const c = colors[item.color];
+
+  items.forEach((t) => {
+    const key =
+      t.type === "receive" || t.type === "deposit"
+        ? "receive"
+        : t.type === "send" ||
+            t.type === "withdraw" ||
+            t.type === "withdrawal"
+          ? "send"
+          : t.type === "transfer"
+            ? "transfer"
+            : t.type === "exchange"
+              ? "exchange"
+              : "other";
+
+    counts[key] += 1;
+  });
+
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  return Object.keys(counts)
+    .map((k) => ({
+      key: k,
+      label: labels[k],
+      color: colors[k],
+      count: counts[k],
+      pct: total ? (counts[k] / total) * 100 : 0,
+    }))
+    .filter((s) => s.count > 0 || total === 0);
+}
+
+function DonutDistribution({ data, loading }) {
+  if (loading) return <div className="ep-skeleton h-56 w-full" />;
+
+  const total = data.reduce((a, b) => a + b.count, 0);
+  const size = 180;
+  const r = 70;
+  const stroke = 22;
+  const c = 2 * Math.PI * r;
+
+  let offset = 0;
 
   return (
-    <motion.div
-      whileHover={{ y: -4 }}
-      transition={{ type: "spring", stiffness: 260, damping: 22 }}
-      className="group relative h-full overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-500 hover:border-teal-400/40 hover:shadow-[0_14px_30px_-16px_rgba(30,41,59,0.20)]"
-    >
-      {/* Hover glow */}
-      <div
-        className="pointer-events-none absolute -left-8 -top-8 h-32 w-32 rounded-full opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
-        style={{ background: c.glow }}
-      />
-      {/* Top accent line */}
-      <div
-        className="pointer-events-none absolute inset-x-5 top-0 h-[2px] origin-left scale-x-0 rounded-full transition-transform duration-500 group-hover:scale-x-100"
-        style={{ background: `linear-gradient(to left, ${c.text}, transparent)` }}
-      />
-
-      <div className="relative z-10 flex items-start justify-between gap-4">
-        <div
-          className="rounded-xl border p-3 transition-all duration-500 group-hover:scale-110 group-hover:rotate-[-4deg]"
-          style={{ background: c.fill, borderColor: c.border, color: c.text }}
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:justify-around">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          className="-rotate-90"
         >
-          <Icon className="h-6 w-6" />
-        </div>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke="#e2e8f0"
+            strokeWidth={stroke}
+          />
 
-        <div className="text-right">
-          <p className="text-xs font-semibold text-slate-500">{item.title}</p>
-          <div className="mt-5 text-3xl font-black text-slate-800 sm:text-4xl">
-            {loading ? (
-              <span className="inline-block h-8 w-24 animate-pulse rounded bg-slate-100" />
-            ) : (
-              <AnimatedNumber value={item.value} prefix={item.prefix} />
-            )}
-          </div>
-          <div className="mt-3 flex items-center justify-end gap-2 text-xs">
-            <span className="font-bold text-emerald-600">{item.change}</span>
-            <span className="text-slate-400">{item.note}</span>
-          </div>
+          {total > 0 &&
+            data.map((d) => {
+              const len = (d.pct / 100) * c;
+
+              const seg = (
+                <motion.circle
+                  key={d.key}
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={r}
+                  fill="none"
+                  stroke={d.color}
+                  strokeWidth={stroke}
+                  strokeDasharray={`${len} ${c - len}`}
+                  strokeDashoffset={-offset}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.6 }}
+                />
+              );
+
+              offset += len;
+              return seg;
+            })}
+        </svg>
+
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <p className="text-2xl font-black text-slate-900">{total}</p>
+          <p className="text-[10px] text-slate-500">معاملة</p>
         </div>
       </div>
-    </motion.div>
+
+      <div className="flex-1 space-y-2">
+        {data.length === 0 && (
+          <p className="text-center text-xs text-slate-400">لا توجد بيانات</p>
+        )}
+
+        {data.map((d) => (
+          <div
+            key={d.key}
+            className="flex items-center justify-between gap-2 text-xs"
+          >
+            <span className="font-bold tabular-nums text-slate-600">
+              {d.pct.toFixed(1)}%
+            </span>
+
+            <span className="flex items-center gap-2 font-bold text-slate-700">
+              {d.label}
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ background: d.color }}
+              />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
+function BranchPerformance({ loading }) {
+  const branches = [
+    { name: "الفرع الرئيسي", value: 820450.75, pct: 100 },
+    { name: "جدة", value: 512300.5, pct: 62 },
+    { name: "فرع الدمام", value: 324120.0, pct: 39 },
+    { name: "فرع الرياض", value: 298750.25, pct: 36 },
+    { name: "أبها", value: 156890.0, pct: 19 },
+  ];
 
-function QuickActions() {
-  const navigate = useNavigate();
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="ep-skeleton h-8" />
+        ))}
+      </div>
+    );
+  }
 
-  const actions = [
+  return (
+    <div className="space-y-3">
+      {branches.map((b) => (
+        <div key={b.name}>
+          <div className="mb-1 flex items-center justify-between text-xs">
+            <span className="font-bold tabular-nums text-slate-700">
+              {b.value.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}{" "}
+              <span className="text-[10px] text-slate-400">USD</span>
+            </span>
+
+            <span className="font-bold text-slate-600">{b.name}</span>
+          </div>
+
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${b.pct}%` }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className="h-full rounded-full bg-emerald-500"
+            />
+          </div>
+        </div>
+      ))}
+
+      <Link
+        to="/funds"
+        className="block pt-2 text-center text-[11px] font-bold text-teal-600 transition hover:text-teal-800"
+      >
+        عرض جميع الفروع
+      </Link>
+    </div>
+  );
+}
+
+function SystemAlerts({ loading }) {
+  const alerts = [
     {
-      label: "إضافة استلام",
-      icon: ArrowDown,
-      bg: "#f0fdfa",
-      border: "#99f6e4",
-      text: "#0f766e",
-      onClick: () => navigate("/add-transaction?type=receive"),
+      icon: AlertTriangle,
+      color: "rose",
+      title: "تنبيه نشاط مشبوه",
+      desc: "تم رصد نشاط غير معتاد على حساب محمد علي حسن",
     },
     {
-      label: "إضافة تسليم",
-      icon: ArrowUp,
-      bg: "#ecfeff",
-      border: "#a5f3fc",
-      text: "#0e7490",
-      onClick: () => navigate("/add-transaction?type=deliver"),
+      icon: CheckCircle2,
+      color: "emerald",
+      title: "تحديث سعر الصرف",
+      desc: "تم تحديث سعر صرف زوج USD/EUR إلى 0.9142",
     },
     {
-      label: "عميل جديد",
-      icon: CirclePlus,
-      bg: "#f0fdfa",
-      border: "#5eead4",
-      text: "#115e59",
-      onClick: () => navigate("/customers?action=add"),
+      icon: CloudUpload,
+      color: "blue",
+      title: "نسخة احتياطية",
+      desc: "تم إنشاء نسخة احتياطية للبيانات بنجاح",
     },
   ];
 
+  const palette = {
+    rose: "bg-rose-50 text-rose-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    blue: "bg-blue-50 text-blue-600",
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="ep-skeleton h-14" />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <Panel title="إجراءات سريعة">
-      <div className="space-y-3">
-        {actions.map((action, index) => {
-          const Icon = action.icon;
-          return (
-            <motion.button
-              key={action.label}
-              type="button"
-              onClick={action.onClick}
-              initial={{ opacity: 0, x: 12 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: index * 0.08 }}
-              whileHover={{ x: -3 }}
-              whileTap={{ scale: 0.98 }}
-              className="group relative flex w-full items-center justify-between overflow-hidden rounded-xl border px-4 py-3 text-sm font-bold transition-all duration-300"
-              style={{ background: action.bg, borderColor: action.border, color: action.text }}
+    <div className="space-y-3">
+      {alerts.map((a, i) => {
+        const Icon = a.icon;
+
+        return (
+          <div key={i} className="flex items-start gap-3 text-right">
+            <div className="flex-1">
+              <p className="text-sm font-black text-slate-900">{a.title}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                {a.desc}
+              </p>
+            </div>
+
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                palette[a.color]
+              }`}
             >
-              <span className="relative z-10">{action.label}</span>
-              <Icon className="relative z-10 h-5 w-5 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]" />
-              <span className="pointer-events-none absolute inset-y-0 -left-20 w-16 rotate-12 bg-white/50 blur-md transition-all duration-700 group-hover:left-[120%]" />
-            </motion.button>
-          );
-        })}
-      </div>
-    </Panel>
-  );
-}
-
-
-function ExchangeRates() {
-  return (
-    <Panel title="أسعار الصرف">
-      <div className="flex flex-1 flex-col justify-between gap-2">
-        {rates.map((rate, index) => (
-          <motion.div
-            key={rate.pair}
-            initial={{ opacity: 0, y: 8 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: index * 0.06 }}
-            whileHover={{ x: -2 }}
-            className="flex flex-1 items-center justify-between rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3 transition-all duration-300 hover:border-teal-400/40 hover:bg-white hover:shadow-[0_6px_18px_-8px_rgba(45,212,191,0.30)]"
-          >
-            <span className={`text-xs font-black ${rate.change.startsWith("+") ? "text-emerald-600" : "text-rose-500"}`}>
-              {rate.change}
-            </span>
-            <div className="text-right">
-              <div className="font-mono text-sm font-black text-slate-900 tabular-nums">{rate.value}</div>
-              <div className="text-xs text-slate-500">{rate.flag} {rate.pair}</div>
+              <Icon className="h-4 w-4" />
             </div>
-          </motion.div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-
-function FinancialChart({ data, period }) {
-  const periodLabel =
-    PERIODS.find((p) => p.key === period)?.label || "آخر 7 أيام";
-
-  return (
-    <Panel
-      title="التحليلات المالية"
-      subtitle={`مقارنة حركة النقد خلال ${periodLabel}`}
-    >
-
-      <div className="mb-4 flex items-center gap-3 text-xs text-slate-500">
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-4 rounded-sm bg-slate-700" />
-          استلام
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-4 rounded-sm bg-slate-300" />
-          تسليم
-        </span>
-      </div>
-
-
-      <div className="relative flex h-72 items-end justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-6 sm:gap-4 sm:px-5">
-
-        <div className="pointer-events-none absolute inset-x-3 top-6 bottom-10 sm:inset-x-5">
-          <div className="absolute inset-x-0 top-0 h-px bg-slate-100" />
-          <div className="absolute inset-x-0 top-1/4 h-px bg-slate-100" />
-          <div className="absolute inset-x-0 top-1/2 h-px bg-slate-100" />
-          <div className="absolute inset-x-0 top-3/4 h-px bg-slate-100" />
-          <div className="absolute inset-x-0 bottom-0 h-px bg-slate-200" />
-        </div>
-
-        {data.map((day, index) => (
-          <div key={`${period}-${index}`} className="relative z-10 group flex flex-1 flex-col items-center">
-            <div className="mb-3 flex h-52 items-end gap-1 sm:gap-1.5">
-              <motion.div
-                initial={{ height: 0 }}
-                animate={{ height: `${day.received}%` }}
-                transition={{ duration: 0.7, delay: index * 0.05, ease: [0.22, 1, 0.36, 1] }}
-                style={{ transformOrigin: "bottom", background: "#1e293b" }}
-                className="w-3 rounded-t-sm transition-colors duration-200 hover:bg-slate-700 sm:w-5"
-              />
-              <motion.div
-                initial={{ height: 0 }}
-                animate={{ height: `${day.delivered}%` }}
-                transition={{ duration: 0.7, delay: index * 0.05 + 0.05, ease: [0.22, 1, 0.36, 1] }}
-                style={{ transformOrigin: "bottom", background: "#cbd5e1" }}
-                className="w-3 rounded-t-sm transition-colors duration-200 hover:bg-slate-400 sm:w-5"
-              />
-            </div>
-            <span className="text-[10px] font-medium text-slate-500 transition-colors duration-200 group-hover:text-slate-800 sm:text-xs">
-              {day.day || day.label || ""}
-            </span>
           </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-
-function RecentTransactions() {
-  const navigate = useNavigate();
-
-  return (
-    <Panel
-      title="آخر الحركات"
-      action={
-        <button
-          type="button"
-          onClick={() => navigate("/transactions")}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-        >
-          عرض الكل
-        </button>
-      }
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-right text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="pb-3 font-medium">الحالة</th>
-              <th className="pb-3 font-medium">العملة</th>
-              <th className="pb-3 font-medium">المبلغ</th>
-              <th className="pb-3 font-medium">النوع</th>
-              <th className="pb-3 font-medium">العميل</th>
-              <th className="pb-3 font-medium">رقم الحركة</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentTxns.map((row, index) => (
-              <motion.tr
-                key={row.id}
-                initial={{ opacity: 0, y: 8 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: index * 0.07 }}
-                className="group border-b border-slate-100 transition-all duration-300 hover:bg-teal-50/40"
-              >
-                <td className="py-3">
-                  <span className={`rounded-full px-2 py-1 text-xs font-bold transition-all duration-300 group-hover:scale-105 ${row.status === "مكتمل" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                    {row.status}
-                  </span>
-                </td>
-                <td className="py-3 text-slate-600">{row.currency}</td>
-                <td className="py-3 font-bold text-slate-900 tabular-nums">{row.amount}</td>
-                <td className="py-3">
-                  <span className={`rounded-full px-2 py-1 text-xs font-bold transition-all duration-300 group-hover:scale-105 ${row.type === "استلام" ? "bg-teal-50 text-teal-700" : "bg-cyan-50 text-cyan-700"}`}>
-                    {row.type}
-                  </span>
-                </td>
-                <td className="py-3 text-slate-700 transition-colors duration-300 group-hover:text-slate-900">{row.client}</td>
-                <td className="py-3 font-mono text-slate-400 transition-colors duration-300 group-hover:text-cyan-600">{row.id}</td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Panel>
-  );
-}
-
-/* ---------------- Panel wrapper ---------------- */
-function Panel({ title, subtitle, children, action }) {
-  return (
-    <div className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-500 hover:border-teal-400/30 hover:shadow-[0_10px_28px_-16px_rgba(30,41,59,0.18)] sm:p-5">
-      <div className="mb-4 flex items-start justify-between gap-3 text-right">
-        <div className="flex items-center gap-2">
-          {action}
-          <div className="h-6 w-1 rounded-full bg-gradient-to-b from-teal-300 to-teal-600 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-        </div>
-        <div>
-          <h3 className="text-lg font-black text-slate-900">{title}</h3>
-          {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
-        </div>
-      </div>
-      {children}
+        );
+      })}
     </div>
   );
 }
