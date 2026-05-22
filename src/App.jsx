@@ -19,6 +19,7 @@ const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ArchivePage = lazy(() => import("./pages/ArchivePage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
+const UsersPermissionsPage = lazy(() => import("./pages/UsersPermissionsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 
@@ -50,8 +51,15 @@ function Shell() {
     <BrowserRouter>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/login" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-          <Route path="/change-password" element={isLoggedIn ? <ChangePasswordPage /> : <Navigate to="/login" replace />} />
+          <Route
+            path="/login"
+            element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+          />
+
+          <Route
+            path="/change-password"
+            element={isLoggedIn ? <ChangePasswordPage /> : <Navigate to="/login" replace />}
+          />
 
           <Route element={isLoggedIn ? <AppLayout /> : <Navigate to="/login" replace />}>
             <Route path="/dashboard" element={<DashboardPage />} />
@@ -64,8 +72,15 @@ function Shell() {
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/archive" element={<ArchivePage />} />
-            <Route path="/users" element={isAdmin ? <UsersPage /> : <Navigate to="/dashboard" replace />} />
-            <Route path="/settings" element={isAdmin ? <SettingsPage /> : <Navigate to="/dashboard" replace />} />
+
+            <Route
+              path="/users"
+              element={isAdmin ? <UsersPage /> : <Navigate to="/dashboard" replace />}
+            />
+
+            <Route path="/users-permissions" element={<UsersPermissionsPage />} />
+
+          <Route path="/settings" element={<SettingsPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} replace />} />

@@ -39,6 +39,7 @@ import Pagination from "../shared/Pagination";
 import ScrollReveal from "../shared/ScrollReveal";
 import { useToast } from "../shared/Toast";
 import customersService from "../services/customers";
+import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import {
   extractApiError,
@@ -72,6 +73,68 @@ const STATUS_OPTIONS = [
   { value: "inactive", label: "موقوف" },
   { value: "deleted", label: "محذوف" },
 ];
+
+const CUSTOMER_CREATE_TYPES = [
+  {
+    value: "regular",
+    label: "فرد",
+    description: "عميل فرد ببيانات أساسية",
+    icon: UserRoundCheck,
+    color: "teal",
+    permissions: ["customer.create", "customer.store", "customer.create.regular", "customer.create.individual"],
+  },
+  {
+    value: "company",
+    label: "شركة",
+    description: "حساب شركة مع بيانات تجارية",
+    icon: Building2,
+    color: "violet",
+    permissions: ["customer.create", "customer.store", "customer.create.company"],
+  },
+  {
+    value: "vip",
+    label: "VIP",
+    description: "عميل مميز بصلاحيات وحدود إضافية",
+    icon: ShieldCheck,
+    color: "amber",
+    permissions: ["customer.create", "customer.store", "customer.create.vip"],
+  },
+];
+
+function collectPermissionKeys(value) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectPermissionKeys(item));
+  }
+
+  if (typeof value === "string") return [value];
+
+  if (typeof value === "object") {
+    return [
+      value.name,
+      value.key,
+      value.slug,
+      value.code,
+      value.permission,
+      ...(Array.isArray(value.permissions) ? collectPermissionKeys(value.permissions) : []),
+    ].filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizePermissions(res) {
+  const data = res?.data?.data ?? res?.data ?? res ?? [];
+  return collectPermissionKeys(data);
+}
+
+function canCreateType(type, permissions, isAdmin) {
+  if (isAdmin) return true;
+  const required = type.permissions || [];
+  return required.some((permission) => permissions.includes(permission));
+}
+
 
 function getCategoryMeta(category) {
   return CATEGORY_META[category] || CATEGORY_META.regular;
@@ -117,7 +180,7 @@ function getCustomerBalance(customer, balancesMap) {
 function CustomersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const [items, setItems] = useState([]);
   const [meta, setMeta] = useState({
@@ -157,8 +220,38 @@ function CustomersPage() {
   const [confirmRestore, setConfirmRestore] = useState(null);
   const [confirmForce, setConfirmForce] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [permissions, setPermissions] = useState(() => collectPermissionKeys(user?.permissions || user?.role?.permissions || []));
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
 
   const withTrashed = statusFilter === "" || statusFilter === "deleted";
+
+  useEffect(() => {
+    const localPermissions = collectPermissionKeys(user?.permissions || user?.role?.permissions || []);
+
+    if (localPermissions.length > 0) {
+      setPermissions(localPermissions);
+      return;
+    }
+
+    let cancelled = false;
+    setPermissionsLoading(true);
+
+    api
+      .get("/permissions")
+      .then((res) => {
+        if (!cancelled) setPermissions(normalizePermissions(res));
+      })
+      .catch(() => {
+        if (!cancelled) setPermissions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPermissionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     setPage(1);
@@ -431,6 +524,11 @@ function CustomersPage() {
     }
   }
 
+  const allowedCustomerTypes = useMemo(
+    () => CUSTOMER_CREATE_TYPES.filter((type) => canCreateType(type, permissions, isAdmin)),
+    [permissions, isAdmin]
+  );
+
   const cityOptions = useMemo(
     () => [{ value: "", label: "المدينة" }, ...cities.map((c) => ({ value: c, label: c }))],
     [cities]
@@ -495,8 +593,15 @@ function CustomersPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setOpenAdd(true)}
-            className="inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-sm transition hover:brightness-110"
+            onClick={() => {
+              if (!permissionsLoading && allowedCustomerTypes.length === 0 && !isAdmin) {
+                toast.error("لا تملك صلاحية إضافة عميل");
+                return;
+              }
+              setOpenAdd(true);
+            }}
+            disabled={permissionsLoading}
+            className="inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
             style={{ background: "hsl(179, 87%, 28%)" }}
           >
             <Plus className="h-4 w-4" />
@@ -768,6 +873,8 @@ function CustomersPage() {
           onSubmit={handleCreate}
           loading={busy}
           onCancel={() => setOpenAdd(false)}
+          allowedTypes={allowedCustomerTypes}
+          permissionsLoading={permissionsLoading}
         />
       </Modal>
 
@@ -785,6 +892,8 @@ function CustomersPage() {
             onSubmit={(payload) => handleUpdate(editCustomer.id, payload)}
             loading={busy}
             onCancel={() => setEditCustomer(null)}
+            allowedTypes={CUSTOMER_CREATE_TYPES}
+            permissionsLoading={false}
           />
         )}
       </Modal>
@@ -1229,42 +1338,147 @@ function TableSkeleton() {
   );
 }
 
-function CustomerForm({ initial, onSubmit, loading, onCancel }) {
+function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUSTOMER_CREATE_TYPES, permissionsLoading = false }) {
+  const [selectedType, setSelectedType] = useState(initial?.category || null);
   const [form, setForm] = useState({
     name: initial?.name || "",
     phone: initial?.phone || "",
     email: initial?.email || "",
-    category: initial?.category || "regular",
     country: initial?.country || "",
     balance_usd: initial?.balance_usd || "",
+    credit_limit: initial?.credit_limit || "",
+    commercial_record: initial?.commercial_record || "",
+    tax_number: initial?.tax_number || "",
     note: initial?.note || "",
     is_active: initial?.is_active !== false,
   });
 
+  const selectedMeta = CUSTOMER_CREATE_TYPES.find((type) => type.value === selectedType);
+  const SelectedTypeIcon = selectedMeta?.icon || UserRoundCheck;
+
   function handleSubmit(e) {
     e.preventDefault();
+    if (!selectedType) return;
 
-    const payload = { ...form, name: form.name.trim() };
+    const payload = {
+      ...form,
+      name: form.name.trim(),
+      category: selectedType,
+    };
 
     if (!payload.email) delete payload.email;
     if (!payload.phone) delete payload.phone;
     if (!payload.country) delete payload.country;
     if (!payload.note) delete payload.note;
     if (payload.balance_usd === "") delete payload.balance_usd;
+    if (payload.credit_limit === "") delete payload.credit_limit;
+    if (!payload.commercial_record) delete payload.commercial_record;
+    if (!payload.tax_number) delete payload.tax_number;
+
+    if (selectedType !== "company") {
+      delete payload.commercial_record;
+      delete payload.tax_number;
+    }
+
+    if (selectedType !== "vip") {
+      delete payload.credit_limit;
+    }
 
     onSubmit(payload);
   }
 
+  if (!initial && !selectedType) {
+    return (
+      <div className="space-y-4" dir="rtl">
+        <div className="text-right">
+          <h3 className="text-sm font-black text-slate-900">اختر نوع العميل</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            سيتم فتح الحقول المتاحة بناءً على نوع العميل وصلاحيات المستخدم.
+          </p>
+        </div>
+
+        {permissionsLoading ? (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-xs font-bold text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            جارٍ تحميل الصلاحيات...
+          </div>
+        ) : allowedTypes.length === 0 ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-right">
+            <p className="text-sm font-black text-rose-700">لا تملك صلاحية إضافة عميل</p>
+            <p className="mt-1 text-xs text-rose-500">
+              يجب ربط دور المستخدم بصلاحية إضافة عميل من صفحة الأدوار والصلاحيات.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {allowedTypes.map((type) => {
+              const Icon = type.icon;
+              const palette = {
+                teal: "border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-300 hover:bg-teal-100",
+                violet: "border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100",
+                amber: "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100",
+              };
+
+              return (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() => setSelectedType(type.value)}
+                  className={`rounded-2xl border p-4 text-right transition hover:-translate-y-0.5 ${palette[type.color] || palette.teal}`}
+                >
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/70">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-black">{type.label}</p>
+                  <p className="mt-1 text-[11px] leading-5 opacity-80">{type.description}</p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <button type="button" onClick={onCancel} className="ep-btn ep-btn-ghost">
+            إلغاء
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
+      {!initial && selectedMeta && (
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
+          <button
+            type="button"
+            onClick={() => setSelectedType(null)}
+            disabled={loading}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
+          >
+            تغيير النوع
+          </button>
+
+          <div className="flex items-center gap-3 text-right">
+            <div>
+              <p className="text-xs font-bold text-slate-500">نوع العميل</p>
+              <p className="text-sm font-black text-slate-900">{selectedMeta.label}</p>
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 text-teal-700">
+              <SelectedTypeIcon className="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="الاسم">
+        <Field label={selectedType === "company" ? "اسم الشركة" : "الاسم"}>
           <input
             required
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             className="ep-input"
-            placeholder="اسم العميل"
+            placeholder={selectedType === "company" ? "اسم الشركة" : "اسم العميل"}
             disabled={loading}
           />
         </Field>
@@ -1291,19 +1505,6 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
           />
         </Field>
 
-        <Field label="نوع العميل">
-          <select
-            value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            className="ep-input appearance-none"
-            disabled={loading}
-          >
-            <option value="regular">فرد</option>
-            <option value="company">شركة</option>
-            <option value="vip">VIP</option>
-          </select>
-        </Field>
-
         <Field label="المدينة">
           <input
             value={form.country}
@@ -1314,25 +1515,64 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
           />
         </Field>
 
-        <Field label="الرصيد">
-          <input
-            type="number"
-            step="0.01"
-            value={form.balance_usd}
-            onChange={(e) => setForm({ ...form, balance_usd: e.target.value })}
-            className="ep-input"
-            placeholder="0.00"
-            dir="ltr"
-            disabled={loading}
-          />
-        </Field>
+        {selectedType === "company" && (
+          <>
+            <Field label="السجل التجاري">
+              <input
+                value={form.commercial_record}
+                onChange={(e) => setForm({ ...form, commercial_record: e.target.value })}
+                className="ep-input"
+                placeholder="رقم السجل التجاري"
+                disabled={loading}
+              />
+            </Field>
+
+            <Field label="الرقم الضريبي">
+              <input
+                value={form.tax_number}
+                onChange={(e) => setForm({ ...form, tax_number: e.target.value })}
+                className="ep-input"
+                placeholder="الرقم الضريبي"
+                disabled={loading}
+              />
+            </Field>
+          </>
+        )}
+
+        {selectedType === "vip" && (
+          <>
+            <Field label="الرصيد الابتدائي">
+              <input
+                type="number"
+                step="0.01"
+                value={form.balance_usd}
+                onChange={(e) => setForm({ ...form, balance_usd: e.target.value })}
+                className="ep-input"
+                placeholder="0.00"
+                dir="ltr"
+                disabled={loading}
+              />
+            </Field>
+
+            <Field label="حد العميل">
+              <input
+                type="number"
+                step="0.01"
+                value={form.credit_limit}
+                onChange={(e) => setForm({ ...form, credit_limit: e.target.value })}
+                className="ep-input"
+                placeholder="0.00"
+                dir="ltr"
+                disabled={loading}
+              />
+            </Field>
+          </>
+        )}
 
         <Field label="الحالة">
           <select
             value={form.is_active ? "1" : "0"}
-            onChange={(e) =>
-              setForm({ ...form, is_active: e.target.value === "1" })
-            }
+            onChange={(e) => setForm({ ...form, is_active: e.target.value === "1" })}
             className="ep-input appearance-none"
             disabled={loading}
           >
@@ -1353,12 +1593,7 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
       </Field>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={loading}
-          className="ep-btn ep-btn-ghost"
-        >
+        <button type="button" onClick={onCancel} disabled={loading} className="ep-btn ep-btn-ghost">
           إلغاء
         </button>
 
