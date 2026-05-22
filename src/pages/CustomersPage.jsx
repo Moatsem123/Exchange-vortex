@@ -476,7 +476,7 @@ function CustomersPage() {
 
   return (
     <div className="space-y-5">
-    <div className="relative z-[70] flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="relative z-[70] flex w-full flex-wrap items-center gap-2 pt-2 sm:w-auto">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-200 bg-violet-50 text-violet-700">
             <UsersRound className="h-6 w-6" />
@@ -828,8 +828,10 @@ function CustomersPage() {
 function FilterDropdown({ value, options, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+
   const selected = options.find((option) => String(option.value) === String(value));
   const label = selected?.label || options[0]?.label || "الكل";
+  const menuOptions = options.filter((option) => option.value !== "");
 
   useEffect(() => {
     function close(e) {
@@ -841,12 +843,12 @@ function FilterDropdown({ value, options, onChange }) {
   }, []);
 
   return (
-    <div ref={ref} className="relative z-[80]">
+    <div ref={ref} className="relative z-20">
       <button
         type="button"
         onClick={() => setOpen((state) => !state)}
         className={[
-        "flex h-11 min-w-[150px] items-center justify-between gap-3 rounded-xl border bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition",
+          "flex h-11 min-w-[150px] cursor-pointer items-center justify-between gap-3 rounded-xl border bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition",
           open || value
             ? "border-slate-400 bg-slate-50 shadow-[0_0_0_3px_rgba(15,23,42,0.06)]"
             : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
@@ -868,21 +870,21 @@ function FilterDropdown({ value, options, onChange }) {
             animate={{ opacity: 1, y: 4, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16 }}
-           className="absolute right-0 top-full z-[90] mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-2xl"
+            className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-2xl"
           >
-            {options.map((option) => {
+            {menuOptions.map((option) => {
               const active = String(option.value) === String(value);
 
               return (
                 <button
-                  key={option.value || "all"}
+                  key={option.value}
                   type="button"
                   onClick={() => {
                     onChange(option.value);
                     setOpen(false);
                   }}
                   className={[
-                    "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition",
+                    "flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition",
                     active
                       ? "bg-slate-900 text-white"
                       : "text-slate-700 hover:bg-slate-100",

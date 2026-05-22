@@ -28,7 +28,7 @@ function Topbar({ onOpenSidebar, unreadCount, refreshUnreadCount }) {
   });
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-xl" dir="rtl">
+    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-xl" dir="rtl">
       <div className="flex items-center gap-4 px-4 py-3 sm:px-6">
         <button
           type="button"

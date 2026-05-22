@@ -8,6 +8,7 @@ import {
   Coins,
   Plus,
   Filter,
+  ChevronDown,
   Download,
   RotateCcw,
   Eye,
@@ -94,13 +95,15 @@ const STATUS_META = {
 };
 
 const TYPE_OPTIONS = [
-  { value: "", label: "الكل" },
+  { value: "", label: "نوع المعاملة" },
   { value: "receive", label: "إيداع" },
   { value: "send", label: "سحب" },
+  { value: "transfer", label: "تحويل" },
+  { value: "exchange", label: "صرف" },
 ];
 
 const STATUS_OPTIONS = [
-  { value: "", label: "الكل" },
+  { value: "", label: "الحالة" },
   { value: "completed", label: "مكتملة" },
   { value: "pending", label: "قيد التنفيذ" },
   { value: "cancelled", label: "ملغاة" },
@@ -130,6 +133,10 @@ function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [searchInput, setSearchInput] = useState("");
+  const [typeInput, setTypeInput] = useState("");
+  const [statusInput, setStatusInput] = useState("");
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -154,9 +161,6 @@ function TransactionsPage() {
   const [confirmRestore, setConfirmRestore] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    setPage(1);
-  }, [typeFilter, statusFilter, search]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,20 +168,37 @@ function TransactionsPage() {
 
     try {
       const res = await transactionsService.list({
-        page,
-        per_page: PER_PAGE,
-        ...(search && { search }),
+        page: search ? 1 : page,
+        per_page: search ? 100 : PER_PAGE,
         ...(typeFilter && { type: typeFilter }),
         ...(statusFilter && { status: statusFilter }),
       });
 
       const { items: list, meta: m } = unwrapList(res);
+      const term = search.trim().toLowerCase();
+      const filteredList = term
+        ? list.filter((tx) => {
+            const customerName = tx.customer?.name?.toLowerCase() || "";
+            const customerPhone = tx.customer?.phone || "";
+            const customerEmail = tx.customer?.email?.toLowerCase() || "";
+            const reference = tx.reference_number?.toLowerCase() || "";
+            const note = tx.note?.toLowerCase() || "";
 
-      setItems(list);
+            return (
+              customerName.includes(term) ||
+              customerPhone.includes(term) ||
+              customerEmail.includes(term) ||
+              reference.includes(term) ||
+              note.includes(term)
+            );
+          })
+        : list;
+
+      setItems(filteredList);
       setMeta({
-        total: Number(m?.total ?? list.length),
-        current_page: Number(m?.current_page ?? page),
-        last_page: Number(m?.last_page ?? 1),
+        total: search ? filteredList.length : Number(m?.total ?? filteredList.length),
+        current_page: search ? 1 : Number(m?.current_page ?? page),
+        last_page: search ? 1 : Number(m?.last_page ?? 1),
         per_page: Number(m?.per_page ?? PER_PAGE),
       });
     } catch (err) {
@@ -198,13 +219,13 @@ function TransactionsPage() {
     try {
       const res = await transactionsService.dailySummary({});
 
-      const data = res?.data || res;
+      const data = res?.data?.data || res?.data || res;
 
       setStats({
-        total: Number(data?.total_transactions || 0),
-        totalDeposits: Number(data?.total_deposits || 0),
-        totalWithdrawals: Number(data?.total_withdrawals || 0),
-        netMovement: Number(data?.net_movement || 0),
+        total: Number(data?.count || 0),
+        totalDeposits: Number(data?.receive || 0),
+        totalWithdrawals: Number(data?.send || 0),
+        netMovement: Number(data?.net || 0),
         depositsChange: 12.6,
         withdrawalsChange: -8.3,
         netChange: 18.9,
@@ -270,7 +291,29 @@ function TransactionsPage() {
     }
   }
 
+  function handleApplyFilters() {
+    setSearch(searchInput.trim());
+    setTypeFilter(typeInput);
+    setStatusFilter(statusInput);
+    setPage(1);
+  }
+
+  function handleTypeChange(value) {
+    setTypeInput(value);
+    setTypeFilter(value);
+    setPage(1);
+  }
+
+  function handleStatusChange(value) {
+    setStatusInput(value);
+    setStatusFilter(value);
+    setPage(1);
+  }
+
   function handleReset() {
+    setSearchInput("");
+    setTypeInput("");
+    setStatusInput("");
     setSearch("");
     setTypeFilter("");
     setStatusFilter("");
@@ -296,49 +339,59 @@ function TransactionsPage() {
         </div>
 
         {/* Filters */}
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/add-transaction")}
-            className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-teal-500/20 transition hover:shadow-xl hover:shadow-teal-500/30"
-            style={{ background: "hsl(179, 87%, 28%)" }}
-          >
-            <Plus className="h-4 w-4" />
-            إضافة معاملة
-          </button>
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate("/add-transaction")}
+              className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl px-5 text-sm font-black text-white shadow-lg shadow-teal-500/20 transition hover:shadow-xl hover:shadow-teal-500/30"
+              style={{ background: "hsl(179, 87%, 28%)" }}
+            >
+              <Plus className="h-4 w-4" />
+              إضافة معاملة
+            </button>
 
-          <button
-            type="button"
-            onClick={handleReset}
-            className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
-          >
-            <RotateCcw className="h-4 w-4" />
-            إعادة تعيين
-          </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+            >
+              <Filter className="h-4 w-4" />
+              فلترة
+            </button>
 
-          <FilterSelect
-            value={typeFilter}
-            onChange={setTypeFilter}
-            options={TYPE_OPTIONS}
-            placeholder="نوع المعاملة"
-          />
-
-          <FilterSelect
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUS_OPTIONS}
-            placeholder="الحالة"
-          />
-
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="ابحث عن معاملة، عميل، مرجع..."
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white pr-10 pl-4 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100"
+            <FilterSelect
+              value={typeInput}
+              onChange={handleTypeChange}
+              options={TYPE_OPTIONS}
+              placeholder="نوع المعاملة"
             />
+
+            <FilterSelect
+              value={statusInput}
+              onChange={handleStatusChange}
+              options={STATUS_OPTIONS}
+              placeholder="الحالة"
+            />
+
+            <div className="relative min-w-[260px] flex-1 max-w-md">
+              <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSearchInput(value);
+                  setSearch(value.trim());
+                  setPage(1);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleApplyFilters();
+                }}
+                placeholder="ابحث عن معاملة، عميل، مرجع..."
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white pr-10 pl-4 text-sm font-bold text-slate-900 transition placeholder:text-slate-400 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              />
+            </div>
           </div>
         </div>
 
@@ -490,10 +543,41 @@ function TransactionsPage() {
 
 function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) {
   const colorStyles = {
-    blue: { bg: "bg-blue-50", text: "text-blue-600" },
-    emerald: { bg: "bg-emerald-50", text: "text-emerald-600" },
-    rose: { bg: "bg-rose-50", text: "text-rose-600" },
-    violet: { bg: "bg-violet-50", text: "text-violet-600" },
+    blue: {
+      iconBg: "bg-blue-50",
+      iconText: "text-blue-600",
+      border: "hover:border-blue-300",
+      glow: "hover:shadow-blue-100",
+      gradient: "hover:from-blue-50/70",
+    },
+    emerald: {
+      iconBg: "bg-emerald-50",
+      iconText: "text-emerald-600",
+      border: "hover:border-emerald-300",
+      glow: "hover:shadow-emerald-100",
+      gradient: "hover:from-emerald-50/70",
+    },
+    rose: {
+      iconBg: "bg-rose-50",
+      iconText: "text-rose-600",
+      border: "hover:border-rose-300",
+      glow: "hover:shadow-rose-100",
+      gradient: "hover:from-rose-50/70",
+    },
+    violet: {
+      iconBg: "bg-violet-50",
+      iconText: "text-violet-600",
+      border: "hover:border-violet-300",
+      glow: "hover:shadow-violet-100",
+      gradient: "hover:from-violet-50/70",
+    },
+    amber: {
+      iconBg: "bg-amber-50",
+      iconText: "text-amber-600",
+      border: "hover:border-amber-300",
+      glow: "hover:shadow-amber-100",
+      gradient: "hover:from-amber-50/70",
+    },
   };
 
   const c = colorStyles[color] || colorStyles.blue;
@@ -509,22 +593,41 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div
+      className={`
+        group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm
+        transition-all duration-300 cursor-pointer
+        hover:-translate-y-1 hover:shadow-xl
+        ${c.border} ${c.glow}
+        bg-gradient-to-l from-transparent to-white ${c.gradient}
+      `}
+    >
       <div className="flex items-start justify-between">
         <div className="text-right flex-1">
-          <span className="text-sm font-bold text-slate-500">{label}</span>
+          <span className="text-sm font-bold text-slate-500">
+            {label}
+          </span>
+
+          <div className="mt-3">
+            <span className="text-4xl font-black text-slate-900 transition group-hover:text-slate-950">
+              {value}
+            </span>
+          </div>
+
           <div className="mt-2">
-            <span className="text-4xl font-black text-slate-900">{value}</span>
+            <span className="text-xs text-slate-400">
+              {suffix}
+            </span>
           </div>
-          <div className="mt-1">
-            <span className="text-xs text-slate-500">{suffix}</span>
-          </div>
+
           {trend && (
             <div className="mt-3 flex items-center justify-end gap-1.5">
               <span className="text-xs text-slate-500">عن الفترة السابقة</span>
               <span
                 className={`flex items-center gap-1 text-xs font-black ${
-                  trend.direction === "up" ? "text-emerald-600" : "text-rose-600"
+                  trend.direction === "up"
+                    ? "text-emerald-600"
+                    : "text-rose-600"
                 }`}
               >
                 {trend.direction === "up" ? (
@@ -537,7 +640,15 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
             </div>
           )}
         </div>
-        <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${c.bg} ${c.text}`}>
+
+        <div
+          className={`
+            flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl
+            border transition-all duration-300
+            ${c.iconBg} ${c.iconText}
+            group-hover:scale-110 group-hover:rotate-3
+          `}
+        >
           <Icon className="h-7 w-7" />
         </div>
       </div>
@@ -546,18 +657,65 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
 }
 
 function FilterSelect({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find((opt) => opt.value === value);
+
+  useEffect(() => {
+    function handler(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-10 appearance-none rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm font-bold text-slate-700 transition focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100"
-    >
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+    <div className="relative w-44" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex h-11 w-full cursor-pointer items-center justify-between rounded-xl border px-4 text-sm font-black transition ${
+          open
+            ? "border-slate-300 bg-white text-slate-950 shadow-sm"
+            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+        }`}
+      >
+        <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+        <span>{selected?.label || placeholder}</span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full z-30 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-2 shadow-xl shadow-slate-200/70"
+          >
+            {options.filter((opt) => opt.value !== "").map((opt) => (
+              <button
+                key={opt.value || "all"}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={`block w-full cursor-pointer rounded-xl px-3 py-2.5 text-right text-sm font-bold transition ${
+                  value === opt.value
+                    ? "bg-slate-100 text-slate-950"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
