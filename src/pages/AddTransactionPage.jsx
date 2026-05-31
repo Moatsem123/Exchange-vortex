@@ -2,8 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  BadgePlus, ArrowDownLeft, ArrowUpRight, ArrowRightLeft,
-  Check, Calculator, Save, X, Loader2, FileText, Percent, Plus, Minus, User as UserIcon,
+  BadgePlus,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ArrowRightLeft,
+  Check,
+  Calculator,
+  Save,
+  X,
+  Loader2,
+  FileText,
+  Percent,
+  Plus,
+  Minus,
+  User as UserIcon,
+  Wallet,
 } from "lucide-react";
 import PageHeader from "../shared/PageHeader";
 import { useToast } from "../shared/Toast";
@@ -13,10 +26,43 @@ import currenciesService from "../services/currencies";
 import { extractApiError, formatMoney, unwrapList } from "../shared/helpers";
 
 const TX_TYPES = [
-  { key: "receive", label: "إيداع", desc: "إضافة مبلغ إلى حساب عميل أو الصندوق", icon: ArrowDownLeft, color: "emerald" },
-  { key: "send", label: "سحب", desc: "سحب مبلغ من حساب عميل أو الصندوق", icon: ArrowUpRight, color: "rose" },
-  { key: "transfer", label: "تحويل بين حسابات النظام", desc: "تحويل مبلغ بين حسابين أو عميلين داخل النظام", icon: ArrowRightLeft, color: "blue" },
+  {
+    key: "receive",
+    label: "إيداع",
+    desc: "إضافة مبلغ إلى حساب عميل أو الصندوق",
+    icon: ArrowDownLeft,
+    color: "emerald",
+  },
+  {
+    key: "send",
+    label: "سحب",
+    desc: "سحب مبلغ من حساب عميل أو الصندوق",
+    icon: ArrowUpRight,
+    color: "rose",
+  },
+  {
+    key: "transfer",
+    label: "تحويل بين حسابات النظام",
+    desc: "تحويل مبلغ بين حسابين أو عميلين داخل النظام",
+    icon: ArrowRightLeft,
+    color: "blue",
+  },
 ];
+
+function getCustomerBalance(customer) {
+  if (!customer) return 0;
+
+  const value =
+    customer.balance_usd ??
+    customer.current_balance ??
+    customer.balance ??
+    customer.vault?.balance_usd ??
+    customer.vault?.initial_balance ??
+    customer.initial_balance ??
+    0;
+
+  return Number(value) || 0;
+}
 
 function AddTransactionPage() {
   const navigate = useNavigate();
@@ -24,6 +70,7 @@ function AddTransactionPage() {
   const toast = useToast();
 
   const [txType, setTxType] = useState(params.get("type") || "receive");
+
   const [customerId, setCustomerId] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customers, setCustomers] = useState([]);
@@ -33,10 +80,11 @@ function AddTransactionPage() {
   const [currency, setCurrency] = useState("USD");
   const [amount, setAmount] = useState("");
   const [exchangeRate, setExchangeRate] = useState("1.0000");
-  const [counterparty, setCounterparty] = useState("");
+
   const [toCustomerId, setToCustomerId] = useState(null);
   const [toCustomerSearch, setToCustomerSearch] = useState("");
   const [showToCustList, setShowToCustList] = useState(false);
+
   const [referenceNumber, setReferenceNumber] = useState("");
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split("T")[0]);
   const [transactionTime, setTransactionTime] = useState(new Date().toTimeString().slice(0, 5));
@@ -50,40 +98,54 @@ function AddTransactionPage() {
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    customersService.list({ per_page: 50 })
+    customersService
+      .list({ per_page: 50 })
       .then((r) => setCustomers(unwrapList(r).items))
       .catch(() => setCustomers([]));
 
-    currenciesService.list({ is_active: true })
+    currenciesService
+      .list({ is_active: true })
       .then((r) => setCurrencies(unwrapList(r).items))
       .catch(() => setCurrencies([]));
   }, []);
 
+  const selectedCustomer = customers.find((c) => String(c.id) === String(customerId));
+  const selectedToCustomer = customers.find((c) => String(c.id) === String(toCustomerId));
+
   const filteredCustomers = useMemo(() => {
     const term = customerSearch.trim().toLowerCase();
-    if (!term) return customers.slice(0, 10);
 
-    return customers.filter((c) =>
-      c.name?.toLowerCase().includes(term) ||
-      c.phone?.includes(term) ||
-      c.email?.toLowerCase().includes(term)
-    ).slice(0, 10);
-  }, [customers, customerSearch]);
+    const list =
+      txType === "transfer"
+        ? customers.filter((c) => String(c.id) !== String(toCustomerId))
+        : customers;
 
-  const selectedCustomer = customers.find((c) => c.id === customerId);
-  const selectedToCustomer = customers.find((c) => c.id === toCustomerId);
+    if (!term) return list.slice(0, 10);
+
+    return list
+      .filter(
+        (c) =>
+          c.name?.toLowerCase().includes(term) ||
+          c.phone?.includes(term) ||
+          c.email?.toLowerCase().includes(term)
+      )
+      .slice(0, 10);
+  }, [customers, customerSearch, toCustomerId, txType]);
 
   const filteredToCustomers = useMemo(() => {
     const term = toCustomerSearch.trim().toLowerCase();
-    const available = customers.filter((c) => c.id !== customerId);
+    const available = customers.filter((c) => String(c.id) !== String(customerId));
 
     if (!term) return available.slice(0, 10);
 
-    return available.filter((c) =>
-      c.name?.toLowerCase().includes(term) ||
-      c.phone?.includes(term) ||
-      c.email?.toLowerCase().includes(term)
-    ).slice(0, 10);
+    return available
+      .filter(
+        (c) =>
+          c.name?.toLowerCase().includes(term) ||
+          c.phone?.includes(term) ||
+          c.email?.toLowerCase().includes(term)
+      )
+      .slice(0, 10);
   }, [customers, customerId, toCustomerSearch]);
 
   const computed = useMemo(() => {
@@ -97,7 +159,13 @@ function AddTransactionPage() {
       commAmount = commissionType === "percentage" ? (a * cv) / 100 : cv;
     }
 
-    const sign = commissionMode === "subtract" ? -1 : commissionMode === "add" ? 1 : 0;
+    const sign =
+      commissionMode === "subtract"
+        ? -1
+        : commissionMode === "add"
+        ? 1
+        : 0;
+
     const final = a + sign * commAmount;
     const usd = final / r;
 
@@ -107,12 +175,22 @@ function AddTransactionPage() {
   function validate() {
     const e = {};
 
-    if (!customerId) {
-      e.customer = txType === "transfer" ? "اختر الحساب أو العميل المرسل" : "اختر عميلاً";
-    }
+    if (txType === "transfer") {
+      if (!customerId) {
+        e.customer = "اختر الحساب أو العميل المرسل";
+      }
 
-    if (txType === "transfer" && !toCustomerId && !counterparty.trim()) {
-      e.to_customer = "اختر الحساب أو العميل المستلم";
+      if (!toCustomerId) {
+        e.to_customer = "اختر الحساب أو العميل المستلم";
+      }
+
+      if (customerId && toCustomerId && String(customerId) === String(toCustomerId)) {
+        e.to_customer = "لا يمكن اختيار نفس العميل كمرسل ومستلم";
+      }
+    } else {
+      if (!customerId) {
+        e.customer = "اختر عميلاً";
+      }
     }
 
     if (!amount || parseFloat(amount) <= 0) e.amount = "أدخل مبلغاً صحيحاً";
@@ -131,27 +209,35 @@ function AddTransactionPage() {
     setLoading(true);
 
     try {
-      const payload = {
+      const basePayload = {
         type: txType,
         amount: parseFloat(amount),
         currency_code: currency,
         exchange_rate: parseFloat(exchangeRate),
-        customer_id: customerId,
-
-        ...(commissionMode !== "none" && commissionValue && {
-          commission_type: commissionType,
-          [commissionType === "percentage" ? "commission_rate" : "commission_amount"]: parseFloat(commissionValue),
-          commission_sign: computed.sign,
-        }),
-
-        ...(referenceNumber && { reference_number: referenceNumber }),
-        ...(txType === "transfer" && toCustomerId && { to_customer_id: toCustomerId }),
-        ...(counterparty && { counterparty }),
-        ...(note && { note }),
-
         transaction_date: transactionDate,
         transaction_time: transactionTime,
+        ...(referenceNumber && { reference_number: referenceNumber }),
+        ...(note && { note }),
+        ...(commissionMode !== "none" &&
+          commissionValue && {
+            commission_type: commissionType,
+            [commissionType === "percentage" ? "commission_rate" : "commission_amount"]:
+              parseFloat(commissionValue),
+            commission_sign: computed.sign,
+          }),
       };
+
+      const payload =
+        txType === "transfer"
+          ? {
+              ...basePayload,
+              from_customer_id: customerId,
+              to_customer_id: toCustomerId,
+            }
+          : {
+              ...basePayload,
+              customer_id: customerId,
+            };
 
       await transactionsService.create(payload);
 
@@ -192,9 +278,15 @@ function AddTransactionPage() {
               const active = txType === t.key;
 
               const palette = {
-                emerald: active ? "border-emerald-500 bg-emerald-50/60" : "border-slate-200 bg-white hover:bg-slate-50",
-                rose: active ? "border-rose-500 bg-rose-50/60" : "border-slate-200 bg-white hover:bg-slate-50",
-                blue: active ? "border-blue-500 bg-blue-50/60" : "border-slate-200 bg-white hover:bg-slate-50",
+                emerald: active
+                  ? "border-emerald-500 bg-emerald-50/60"
+                  : "border-slate-200 bg-white hover:bg-slate-50",
+                rose: active
+                  ? "border-rose-500 bg-rose-50/60"
+                  : "border-slate-200 bg-white hover:bg-slate-50",
+                blue: active
+                  ? "border-blue-500 bg-blue-50/60"
+                  : "border-slate-200 bg-white hover:bg-slate-50",
               };
 
               const iconColor = {
@@ -246,7 +338,7 @@ function AddTransactionPage() {
                 <Field
                   label={txType === "transfer" ? "من الحساب / العميل" : "العميل"}
                   required
-                  error={errors.customer || errors.customer_id}
+                  error={errors.customer || errors.customer_id || errors.from_customer_id}
                 >
                   <div className="relative">
                     <input
@@ -258,7 +350,11 @@ function AddTransactionPage() {
                         setShowCustList(true);
                       }}
                       onFocus={() => setShowCustList(true)}
-                      placeholder={txType === "transfer" ? "ابحث عن الحساب أو العميل المرسل..." : "ابحث عن عميل..."}
+                      placeholder={
+                        txType === "transfer"
+                          ? "ابحث عن الحساب أو العميل المرسل..."
+                          : "ابحث عن عميل..."
+                      }
                       className="ep-input"
                     />
 
@@ -268,7 +364,7 @@ function AddTransactionPage() {
                         onClick={() => {
                           setCustomerId(null);
                           setCustomerSearch("");
-                          setToCustomerId(null);
+                          setShowCustList(false);
                         }}
                         className="absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100"
                       >
@@ -277,33 +373,26 @@ function AddTransactionPage() {
                     )}
 
                     {showCustList && !selectedCustomer && filteredCustomers.length > 0 && (
-                      <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                        {filteredCustomers.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              setCustomerId(c.id);
-                              setCustomerSearch("");
-                              setShowCustList(false);
-                            }}
-                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right hover:bg-slate-50"
-                          >
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                              <UserIcon className="h-4 w-4" />
-                            </div>
+                      <CustomerDropdown
+                        customers={filteredCustomers}
+                        showBalance={txType === "transfer"}
+                        onSelect={(c) => {
+                          setCustomerId(c.id);
+                          setCustomerSearch("");
+                          setShowCustList(false);
 
-                            <div className="min-w-0 flex-1 text-right">
-                              <p className="truncate text-sm font-bold text-slate-900">{c.name}</p>
-                              <p className="truncate text-[11px] text-slate-500">
-                                {c.phone} · {c.country}
-                              </p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                          if (String(c.id) === String(toCustomerId)) {
+                            setToCustomerId(null);
+                            setToCustomerSearch("");
+                          }
+                        }}
+                      />
                     )}
                   </div>
+
+                  {txType === "transfer" && selectedCustomer && (
+                    <BalanceHint customer={selectedCustomer} />
+                  )}
                 </Field>
 
                 <Field label="العملة" required error={errors.currency_code || errors.currency}>
@@ -316,9 +405,7 @@ function AddTransactionPage() {
                     }}
                     className="ep-input appearance-none"
                   >
-                    {currencies.length === 0 && (
-                      <option value="USD">USD - الدولار الأمريكي</option>
-                    )}
+                    {currencies.length === 0 && <option value="USD">USD - الدولار الأمريكي</option>}
 
                     {currencies.map((c) => (
                       <option key={c.code} value={c.code}>
@@ -340,7 +427,11 @@ function AddTransactionPage() {
                   />
                 </Field>
 
-                <Field label="سعر الصرف (مقابل USD)" required error={errors.exchange_rate || errors.exchangeRate}>
+                <Field
+                  label="سعر الصرف (مقابل USD)"
+                  required
+                  error={errors.exchange_rate || errors.exchangeRate}
+                >
                   <input
                     type="number"
                     step="0.0001"
@@ -352,8 +443,12 @@ function AddTransactionPage() {
                   />
                 </Field>
 
-                {txType === "transfer" ? (
-                  <Field label="إلى الحساب / العميل" required error={errors.to_customer || errors.to_customer_id}>
+                {txType === "transfer" && (
+                  <Field
+                    label="إلى الحساب / العميل"
+                    required
+                    error={errors.to_customer || errors.to_customer_id}
+                  >
                     <div className="relative">
                       <input
                         type="text"
@@ -361,7 +456,6 @@ function AddTransactionPage() {
                         onChange={(e) => {
                           setToCustomerSearch(e.target.value);
                           setToCustomerId(null);
-                          setCounterparty(e.target.value);
                           setShowToCustList(true);
                         }}
                         onFocus={() => setShowToCustList(true)}
@@ -375,7 +469,7 @@ function AddTransactionPage() {
                           onClick={() => {
                             setToCustomerId(null);
                             setToCustomerSearch("");
-                            setCounterparty("");
+                            setShowToCustList(false);
                           }}
                           className="absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100"
                         >
@@ -384,44 +478,19 @@ function AddTransactionPage() {
                       )}
 
                       {showToCustList && !selectedToCustomer && filteredToCustomers.length > 0 && (
-                        <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                          {filteredToCustomers.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setToCustomerId(c.id);
-                                setToCustomerSearch("");
-                                setCounterparty(c.name);
-                                setShowToCustList(false);
-                              }}
-                              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right hover:bg-slate-50"
-                            >
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                                <UserIcon className="h-4 w-4" />
-                              </div>
-
-                              <div className="min-w-0 flex-1 text-right">
-                                <p className="truncate text-sm font-bold text-slate-900">{c.name}</p>
-                                <p className="truncate text-[11px] text-slate-500">
-                                  {c.phone} · {c.country}
-                                </p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
+                        <CustomerDropdown
+                          customers={filteredToCustomers}
+                          showBalance
+                          onSelect={(c) => {
+                            setToCustomerId(c.id);
+                            setToCustomerSearch("");
+                            setShowToCustList(false);
+                          }}
+                        />
                       )}
                     </div>
-                  </Field>
-                ) : (
-                  <Field label="الطرف المقابل (اختياري)">
-                    <input
-                      type="text"
-                      value={counterparty}
-                      onChange={(e) => setCounterparty(e.target.value)}
-                      placeholder="اسم الجهة المقابلة"
-                      className="ep-input"
-                    />
+
+                    {selectedToCustomer && <BalanceHint customer={selectedToCustomer} />}
                   </Field>
                 )}
 
@@ -542,16 +611,46 @@ function AddTransactionPage() {
               </div>
 
               <div className="space-y-3 text-sm">
-                <SummaryRow label="نوع المعاملة" value={TX_TYPES.find((t) => t.key === txType)?.label || "—"} />
-                <SummaryRow label={txType === "transfer" ? "من" : "العميل"} value={selectedCustomer?.name || "—"} />
+                <SummaryRow
+                  label="نوع المعاملة"
+                  value={TX_TYPES.find((t) => t.key === txType)?.label || "—"}
+                />
+
+                <SummaryRow
+                  label={txType === "transfer" ? "من" : "العميل"}
+                  value={selectedCustomer?.name || "—"}
+                />
 
                 {txType === "transfer" && (
-                  <SummaryRow label="إلى" value={selectedToCustomer?.name || counterparty || "—"} />
+                  <SummaryRow
+                    label="رصيد المرسل"
+                    value={`${formatMoney(getCustomerBalance(selectedCustomer))} USD`}
+                    mono
+                  />
+                )}
+
+                {txType === "transfer" && (
+                  <>
+                    <SummaryRow label="إلى" value={selectedToCustomer?.name || "—"} />
+                    <SummaryRow
+                      label="رصيد المستلم"
+                      value={`${formatMoney(getCustomerBalance(selectedToCustomer))} USD`}
+                      mono
+                    />
+                  </>
                 )}
 
                 <SummaryRow label="العملة" value={`${currentCur?.symbol || ""} ${currency}`} />
-                <SummaryRow label="المبلغ الأساسي" value={`${formatMoney(parseFloat(amount) || 0)} ${currency}`} mono />
-                <SummaryRow label="سعر الصرف" value={formatMoney(parseFloat(exchangeRate) || 0, { decimals: 4 })} mono />
+                <SummaryRow
+                  label="المبلغ الأساسي"
+                  value={`${formatMoney(parseFloat(amount) || 0)} ${currency}`}
+                  mono
+                />
+                <SummaryRow
+                  label="سعر الصرف"
+                  value={formatMoney(parseFloat(exchangeRate) || 0, { decimals: 4 })}
+                  mono
+                />
 
                 {commissionMode !== "none" && computed.commAmount > 0 && (
                   <SummaryRow
@@ -566,7 +665,10 @@ function AddTransactionPage() {
                 <div className="rounded-xl bg-slate-50 p-3">
                   <p className="text-right text-[11px] font-bold text-slate-500">الإجمالي النهائي</p>
 
-                  <p dir="ltr" className="mt-1 text-right font-mono text-2xl font-black tabular-nums text-slate-900">
+                  <p
+                    dir="ltr"
+                    className="mt-1 text-right font-mono text-2xl font-black tabular-nums text-slate-900"
+                  >
                     {formatMoney(computed.final)} <span className="text-sm text-slate-500">{currency}</span>
                   </p>
 
@@ -574,6 +676,15 @@ function AddTransactionPage() {
                     ≈ ${formatMoney(computed.usd)}
                   </p>
                 </div>
+
+                {txType === "transfer" && (
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-right">
+                    <p className="text-[11px] font-black text-blue-700">ملاحظة التحويل</p>
+                    <p className="mt-1 text-[11px] leading-5 text-blue-600">
+                      سيتم خصم المبلغ من الحساب المرسل وإضافته إلى الحساب المستلم تلقائيًا.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="mt-5 space-y-2">
@@ -582,7 +693,11 @@ function AddTransactionPage() {
                   حفظ المعاملة
                 </button>
 
-                <button type="button" onClick={() => navigate("/transactions")} className="ep-btn ep-btn-ghost h-11 w-full">
+                <button
+                  type="button"
+                  onClick={() => navigate("/transactions")}
+                  className="ep-btn ep-btn-ghost h-11 w-full"
+                >
                   إلغاء
                 </button>
               </div>
@@ -590,6 +705,56 @@ function AddTransactionPage() {
           </aside>
         </div>
       </form>
+    </div>
+  );
+}
+
+function CustomerDropdown({ customers, onSelect, showBalance = false }) {
+  return (
+    <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+      {customers.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => onSelect(c)}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right hover:bg-slate-50"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+            <UserIcon className="h-4 w-4" />
+          </div>
+
+          <div className="min-w-0 flex-1 text-right">
+            <p className="truncate text-sm font-bold text-slate-900">{c.name}</p>
+            <p className="truncate text-[11px] text-slate-500">
+              {c.phone || "—"} · {c.country || "—"}
+            </p>
+          </div>
+
+          {showBalance && (
+            <div className="shrink-0 text-left">
+              <p className="text-[10px] font-bold text-slate-400">الرصيد</p>
+              <p dir="ltr" className="font-mono text-xs font-black text-slate-800">
+                {formatMoney(getCustomerBalance(c))} USD
+              </p>
+            </div>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BalanceHint({ customer }) {
+  return (
+    <div className="mt-2 flex items-center justify-between rounded-xl border border-teal-100 bg-teal-50/50 px-3 py-2">
+      <div className="flex items-center gap-2 text-teal-700">
+        <Wallet className="h-4 w-4" />
+        <span className="text-xs font-bold">رصيد العميل</span>
+      </div>
+
+      <span dir="ltr" className="font-mono text-xs font-black text-slate-800">
+        {formatMoney(getCustomerBalance(customer))} USD
+      </span>
     </div>
   );
 }

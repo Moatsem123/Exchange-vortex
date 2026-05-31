@@ -35,7 +35,6 @@ import ErrorState from "../shared/ErrorState";
 import Badge from "../shared/Badge";
 import Modal from "../shared/Modal";
 import ConfirmDialog from "../shared/ConfirmDialog";
-import Pagination from "../shared/Pagination";
 import ScrollReveal from "../shared/ScrollReveal";
 import { useToast } from "../shared/Toast";
 import customersService from "../services/customers";
@@ -573,9 +572,9 @@ function CustomersPage() {
   ];
 
   return (
-    <div className="space-y-5">
-    <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative z-[70] flex w-full flex-wrap items-center gap-2 pt-2 sm:w-auto">
+    <div className="relative z-0 isolate space-y-5">
+      <div className="relative z-20 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-full flex-wrap items-center gap-2 pt-2 sm:w-auto">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-200 bg-violet-50 text-violet-700">
             <UsersRound className="h-6 w-6" />
           </div>
@@ -590,7 +589,7 @@ function CustomersPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="relative z-20 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => {
@@ -628,7 +627,7 @@ function CustomersPage() {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 [&>*]:relative [&>*]:!z-0">
         {statCards.map((card, index) => (
           <StatCard
             key={card.title}
@@ -639,14 +638,14 @@ function CustomersPage() {
         ))}
       </section>
             <ScrollReveal>
-        <div className="ep-card-static overflow-visible">
+        <div className="relative z-0 ep-card-static overflow-visible">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div className="relative w-full max-w-md">
               <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="ابحث بالاسم، الهاتف، البريد الإلكتروني..."
+                placeholder="ابحث بالاسم أو الهاتف أو المدينة..."
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white pr-10 pl-4 text-right text-sm font-bold text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10"
               />
             </div>
@@ -718,9 +717,9 @@ function CustomersPage() {
 
                                 <p
                                   className="mt-0.5 truncate text-[11px] text-slate-500"
-                                  dir={customer.email ? "ltr" : "rtl"}
+                                  dir="rtl"
                                 >
-                                  {customer.email || customer.note || "—"}
+                                  {customer.note || "—"}
                                 </p>
 
                                 <div className="mt-1 inline-flex">
@@ -834,11 +833,11 @@ function CustomersPage() {
               </div>
 
               <div className="border-t border-slate-200">
-                <Pagination
+                <CustomerPagination
                   current={meta.current_page || page}
                   last={meta.last_page || 1}
-                  total={meta.total || items.length}
                   perPage={meta.per_page || PER_PAGE}
+                  count={items.length}
                   onChange={setPage}
                 />
               </div>
@@ -934,6 +933,63 @@ function CustomersPage() {
   );
 }
 
+function CustomerPagination({ current, last, perPage, count, onChange }) {
+  const safeCurrent = Number(current || 1);
+  const safeLast = Math.max(Number(last || 1), 1);
+
+  const start = count > 0 ? (safeCurrent - 1) * perPage + 1 : 0;
+  const end = count > 0 ? start + count - 1 : 0;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <p className="text-[11px] font-bold text-slate-500">
+        {count > 0 ? `عرض من ${start} إلى ${end}` : "لا توجد بيانات"}
+      </p>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onChange(safeCurrent - 1)}
+          disabled={safeCurrent <= 1}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+        >
+          ‹
+        </button>
+
+        {Array.from({ length: safeLast }).map((_, index) => {
+          const pageNumber = index + 1;
+          const active = pageNumber === safeCurrent;
+
+          return (
+            <button
+              key={pageNumber}
+              type="button"
+              onClick={() => onChange(pageNumber)}
+              className={[
+                "flex h-9 min-w-9 items-center justify-center rounded-lg border px-3 text-xs font-black transition",
+                active
+                  ? "border-teal-600 bg-teal-600 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+              ].join(" ")}
+            >
+              {pageNumber}
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => onChange(safeCurrent + 1)}
+          disabled={safeCurrent >= safeLast}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+        >
+          ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FilterDropdown({ value, options, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -952,7 +1008,7 @@ function FilterDropdown({ value, options, onChange }) {
   }, []);
 
   return (
-    <div ref={ref} className="relative z-20">
+    <div ref={ref} className={open ? "relative z-30" : "relative z-10"}>
       <button
         type="button"
         onClick={() => setOpen((state) => !state)}
@@ -1016,36 +1072,23 @@ function FilterDropdown({ value, options, onChange }) {
 }
 
 function DefaultAvatar({ customer, size = "md" }) {
-  const avatarSeeds = [
-    "Mason",
-    "Sara",
-    "Omar",
-    "Nour",
-    "Ali",
-    "Lina",
-    "Kareem",
-    "Maya",
-  ];
-
-  const seed = avatarSeeds[Number(customer?.id || 1) % avatarSeeds.length];
+  const name = customer?.name || "عميل";
+  const firstLetter = name.trim().charAt(0) || "ع";
 
   const sizes = {
-    md: "h-11 w-11 rounded-full",
-    lg: "h-20 w-20 rounded-full",
+    md: "h-11 w-11 text-sm",
+    lg: "h-20 w-20 text-2xl",
   };
 
   return (
     <div className="relative shrink-0">
       <div
-        className={`${
-          sizes[size] || sizes.md
-        } overflow-hidden border-2 border-white bg-slate-100 shadow-md`}
+        className={[
+          "flex items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-teal-500 to-slate-800 font-black text-white shadow-md",
+          sizes[size] || sizes.md,
+        ].join(" ")}
       >
-        <img
-          src={`https://api.dicebear.com/9.x/adventurer/svg?seed=${seed}`}
-          alt="customer avatar"
-          className="h-full w-full object-cover"
-        />
+        {firstLetter}
       </div>
 
       {!customer?.deleted_at && (
@@ -1343,7 +1386,6 @@ function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUS
   const [form, setForm] = useState({
     name: initial?.name || "",
     phone: initial?.phone || "",
-    email: initial?.email || "",
     country: initial?.country || "",
     balance_usd: initial?.balance_usd || "",
     credit_limit: initial?.credit_limit || "",
@@ -1365,8 +1407,6 @@ function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUS
       name: form.name.trim(),
       category: selectedType,
     };
-
-    if (!payload.email) delete payload.email;
     if (!payload.phone) delete payload.phone;
     if (!payload.country) delete payload.country;
     if (!payload.note) delete payload.note;
@@ -1489,17 +1529,6 @@ function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUS
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
             className="ep-input"
             placeholder="+970..."
-            dir="ltr"
-            disabled={loading}
-          />
-        </Field>
-
-        <Field label="البريد الإلكتروني">
-          <input
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            className="ep-input"
-            placeholder="example@email.com"
             dir="ltr"
             disabled={loading}
           />

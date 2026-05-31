@@ -18,10 +18,12 @@ const FundsPage = lazy(() => import("./pages/FundsPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ArchivePage = lazy(() => import("./pages/ArchivePage"));
-const UsersPage = lazy(() => import("./pages/UsersPage"));
-const UsersPermissionsPage = lazy(() => import("./pages/UsersPermissionsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
+
+const UsersPage = lazy(() => import("./pages/UsersPage"));
+const RolesPage = lazy(() => import("./pages/RolesPage"));
+const PermissionsPage = lazy(() => import("./pages/PermissionsPage"));
 
 const SPLASH_MS = 1200;
 
@@ -72,19 +74,31 @@ function Shell() {
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/archive" element={<ArchivePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
 
             <Route
               path="/users"
               element={isAdmin ? <UsersPage /> : <Navigate to="/dashboard" replace />}
             />
-
-            <Route path="/users-permissions" element={<UsersPermissionsPage />} />
-
-          <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/roles"
+              element={isAdmin ? <RolesPage /> : <Navigate to="/dashboard" replace />}
+            />
+            <Route
+              path="/permissions"
+              element={isAdmin ? <PermissionsPage /> : <Navigate to="/dashboard" replace />}
+            />
           </Route>
 
-          <Route path="/" element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} replace />} />
-          <Route path="*" element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} replace />} />
+          <Route
+            path="/"
+            element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} replace />}
+          />
+
+          <Route
+            path="*"
+            element={<Navigate to={isLoggedIn ? "/dashboard" : "/login"} replace />}
+          />
         </Routes>
       </Suspense>
     </BrowserRouter>

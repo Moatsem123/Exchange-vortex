@@ -9,12 +9,8 @@ import {
   Plus,
   Filter,
   ChevronDown,
-  Download,
-  RotateCcw,
   Eye,
-  Edit3,
   Trash2,
-  MoreHorizontal,
   X,
   Loader2,
   TrendingUp,
@@ -29,10 +25,7 @@ import {
   CalendarDays,
   MapPin,
   Phone,
-  Mail,
   CreditCard,
-  Receipt,
-  Printer,
 } from "lucide-react";
 
 import EmptyState from "../shared/EmptyState";
@@ -42,6 +35,7 @@ import ConfirmDialog from "../shared/ConfirmDialog";
 import Pagination from "../shared/Pagination";
 import { useToast } from "../shared/Toast";
 import transactionsService from "../services/transactions";
+import dashboardService from "../services/dashboard";
 import { useAuth } from "../context/AuthContext";
 import {
   extractApiError,
@@ -99,15 +93,8 @@ const TYPE_OPTIONS = [
   { value: "receive", label: "إيداع" },
   { value: "send", label: "سحب" },
   { value: "transfer", label: "تحويل" },
-  { value: "exchange", label: "صرف" },
 ];
 
-const STATUS_OPTIONS = [
-  { value: "", label: "الحالة" },
-  { value: "completed", label: "مكتملة" },
-  { value: "pending", label: "قيد التنفيذ" },
-  { value: "cancelled", label: "ملغاة" },
-];
 
 function getTypeMeta(type) {
   return TX_TYPE_META[type] || TX_TYPE_META.receive;
@@ -135,11 +122,9 @@ function TransactionsPage() {
 
   const [searchInput, setSearchInput] = useState("");
   const [typeInput, setTypeInput] = useState("");
-  const [statusInput, setStatusInput] = useState("");
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
 
   const [stats, setStats] = useState({
@@ -158,7 +143,6 @@ function TransactionsPage() {
   const [selectedLoading, setSelectedLoading] = useState(false);
 
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [confirmRestore, setConfirmRestore] = useState(null);
   const [busy, setBusy] = useState(false);
 
 
@@ -171,7 +155,6 @@ function TransactionsPage() {
         page: search ? 1 : page,
         per_page: search ? 100 : PER_PAGE,
         ...(typeFilter && { type: typeFilter }),
-        ...(statusFilter && { status: statusFilter }),
       });
 
       const { items: list, meta: m } = unwrapList(res);
@@ -207,7 +190,7 @@ function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, typeFilter, statusFilter, page]);
+  }, [search, typeFilter, page]);
 
   useEffect(() => {
     load();
@@ -217,18 +200,18 @@ function TransactionsPage() {
     setStats((s) => ({ ...s, loading: true }));
 
     try {
-      const res = await transactionsService.dailySummary({});
-
-      const data = res?.data?.data || res?.data || res;
+      const res = await dashboardService.summary("7d");
+      const data = res?.data?.data || res?.data || res || {};
+      const total = data?.total_summary || {};
 
       setStats({
-        total: Number(data?.count || 0),
-        totalDeposits: Number(data?.receive || 0),
-        totalWithdrawals: Number(data?.send || 0),
-        netMovement: Number(data?.net || 0),
-        depositsChange: 12.6,
-        withdrawalsChange: -8.3,
-        netChange: 18.9,
+        total: Number(total?.count ?? 0),
+        totalDeposits: Number(total?.receive ?? 0),
+        totalWithdrawals: Number(total?.send ?? 0),
+        netMovement: Number(total?.net ?? 0),
+        depositsChange: 0,
+        withdrawalsChange: 0,
+        netChange: 0,
         loading: false,
       });
     } catch {
@@ -275,26 +258,9 @@ function TransactionsPage() {
     }
   }
 
-  async function handleRestore() {
-    if (!confirmRestore) return;
-    setBusy(true);
-    try {
-      await transactionsService.restore(confirmRestore.id);
-      toast.success("تم استعادة المعاملة");
-      setConfirmRestore(null);
-      load();
-      loadStats();
-    } catch (err) {
-      toast.error(extractApiError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function handleApplyFilters() {
     setSearch(searchInput.trim());
     setTypeFilter(typeInput);
-    setStatusFilter(statusInput);
     setPage(1);
   }
 
@@ -304,19 +270,11 @@ function TransactionsPage() {
     setPage(1);
   }
 
-  function handleStatusChange(value) {
-    setStatusInput(value);
-    setStatusFilter(value);
-    setPage(1);
-  }
-
   function handleReset() {
     setSearchInput("");
     setTypeInput("");
-    setStatusInput("");
     setSearch("");
     setTypeFilter("");
-    setStatusFilter("");
     setPage(1);
   }
 
@@ -357,7 +315,7 @@ function TransactionsPage() {
               className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-black text-white transition hover:bg-slate-800"
             >
               <Filter className="h-4 w-4" />
-              فلترة
+              إعادة تعيين
             </button>
 
             <FilterSelect
@@ -365,13 +323,6 @@ function TransactionsPage() {
               onChange={handleTypeChange}
               options={TYPE_OPTIONS}
               placeholder="نوع المعاملة"
-            />
-
-            <FilterSelect
-              value={statusInput}
-              onChange={handleStatusChange}
-              options={STATUS_OPTIONS}
-              placeholder="الحالة"
             />
 
             <div className="relative min-w-[260px] flex-1 max-w-md">
@@ -475,7 +426,6 @@ function TransactionsPage() {
                         transaction={tx}
                         onView={() => setSelectedId(tx.id)}
                         onDelete={() => setConfirmDelete(tx)}
-                        onRestore={() => setConfirmRestore(tx)}
                       />
                     ))}
                   </tbody>
@@ -520,19 +470,6 @@ function TransactionsPage() {
             confirmColor="rose"
             onConfirm={handleDelete}
             onCancel={() => setConfirmDelete(null)}
-            loading={busy}
-          />
-        )}
-
-        {confirmRestore && (
-          <ConfirmDialog
-            open={!!confirmRestore}
-            title="استعادة المعاملة"
-            message={`هل تريد استعادة المعاملة "${confirmRestore.reference_number}"؟`}
-            confirmLabel="استعادة"
-            confirmColor="teal"
-            onConfirm={handleRestore}
-            onCancel={() => setConfirmRestore(null)}
             loading={busy}
           />
         )}
@@ -661,16 +598,6 @@ function FilterSelect({ value, onChange, options, placeholder }) {
   const ref = useRef(null);
   const selected = options.find((opt) => opt.value === value);
 
-  useEffect(() => {
-    function handler(e) {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   return (
     <div className="relative w-44" ref={ref}>
       <button
@@ -719,21 +646,9 @@ function FilterSelect({ value, onChange, options, placeholder }) {
   );
 }
 
-function TransactionRow({ transaction, onView, onDelete, onRestore }) {
+function TransactionRow({ transaction, onView, onDelete }) {
   const meta = getTypeMeta(transaction.type);
   const statusMeta = getStatusMeta(transaction.status);
-  const [showActions, setShowActions] = useState(false);
-  const actionsRef = useRef(null);
-
-  useEffect(() => {
-    function handler(e) {
-      if (actionsRef.current && !actionsRef.current.contains(e.target)) {
-        setShowActions(false);
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
   const amount = Number(transaction.amount || 0);
   const isPositive = transaction.type === "receive" || transaction.type === "exchange";
@@ -748,42 +663,19 @@ function TransactionRow({ transaction, onView, onDelete, onRestore }) {
             type="button"
             onClick={onView}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+            title="عرض التفاصيل"
           >
             <Eye className="h-4 w-4" />
           </button>
 
-          <div className="relative" ref={actionsRef}>
-            <button
-              type="button"
-              onClick={() => setShowActions(!showActions)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-
-            <AnimatePresence>
-              {showActions && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="absolute left-0 top-full z-10 mt-1 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActions(false);
-                      onDelete();
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-right text-sm font-bold text-rose-600 transition hover:bg-rose-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    حذف
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+            title="حذف"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
       </td>
       <td className="px-4 py-3">
@@ -905,10 +797,10 @@ function TransactionDetailsPanel({ transactionId, data, loading, onClose }) {
             <div className="space-y-3">
               <h3 className="text-sm font-black text-slate-900">معلومات المعاملة</h3>
               
-              <InfoRow label="رسوم المعاملة" value={`${formatMoney(data?.commission_amount || 0)} USD`} />
+              <InfoRow label="رسوم المعاملة" value={`${formatMoney(data?.commission_usd || 0)} USD`} />
               <InfoRow label="المستفيد" value={data?.counterparty || "—"} />
               <InfoRow label="سعر الصرف" value={`1 USD = ${data?.exchange_rate || "1.0000"} ${data?.currency_code || "USD"}`} />
-              <InfoRow label="المبلغ بـ USD" value={`${formatMoney(data?.amount_usd || 0)} USD`} />
+              <InfoRow label="المبلغ بـ USD" value={`${formatMoney(data?.net_usd_value ?? data?.usd_value ?? 0)} USD`} />
               <InfoRow label="طريقة الدفع" value="نقدي" />
               <InfoRow label="الفرع الرئيسي" value={data?.branch || "—"} />
               <InfoRow label="القناة" value="—" />
@@ -928,10 +820,6 @@ function TransactionDetailsPanel({ transactionId, data, loading, onClose }) {
                       <span>{data.customer.phone || "—"}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <Mail className="h-3.5 w-3.5" />
-                      <span>{data.customer.email || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
                       <MapPin className="h-3.5 w-3.5" />
                       <span>{data.customer.country || "—"}</span>
                     </div>
@@ -943,24 +831,6 @@ function TransactionDetailsPanel({ transactionId, data, loading, onClose }) {
                 </div>
               </div>
             )}
-
-            {/* Actions */}
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-black text-teal-700 transition hover:bg-teal-100"
-              >
-                <Receipt className="h-4 w-4" />
-                عرض الإيصال
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-              >
-                <Printer className="h-4 w-4" />
-                تحميل الإيصال
-              </button>
-            </div>
           </div>
         </>
       )}

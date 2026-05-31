@@ -41,7 +41,7 @@ const usersPermissionsService = {
       api.get(`/roles/${id}`).then((r) => r.data),
 
     update: (id, data) =>
-      api.patch(`/roles/${id}`, data).then((r) => r.data),
+      api.put(`/roles/${id}`, data).then((r) => r.data),
 
     remove: (id) =>
       api.delete(`/roles/${id}`).then((r) => r.data),

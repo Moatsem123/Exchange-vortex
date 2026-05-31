@@ -52,8 +52,12 @@ function writeBalance(v) {
   } catch {}
 }
 
+function unwrapApiPayload(response) {
+  return response?.data?.data || response?.data || response || {};
+}
+
 function normalizeChartResponse(response) {
-  const payload = response?.data || response || {};
+  const payload = unwrapApiPayload(response);
 
   if (Array.isArray(payload)) {
     return payload;
@@ -123,7 +127,7 @@ function DashboardPage() {
           transactionsService.list({ per_page: 8 }).catch(() => null),
         ]);
 
-      setSummary(summaryResponse?.data || summaryResponse || null);
+      setSummary(unwrapApiPayload(summaryResponse));
       setChart(normalizeChartResponse(chartResponse));
       setRecent(unwrapList(transactionsResponse).items.slice(0, 8));
     } catch (err) {
@@ -319,32 +323,17 @@ function buildStats(s, generalBalance) {
   const total = s?.total_summary || {};
 
   const totalTx = Number(
-    total?.count ??
-      s?.transactions_count ??
-      s?.total_transactions ??
-      0
+    total?.count ?? s?.transactions_count ?? s?.total_transactions ?? 0
   );
 
   const totalIn = Number(
-    total?.receive ??
-      s?.received ??
-      s?.deposits ??
-      s?.total_deposits ??
-      0
+    total?.receive ?? s?.received ?? s?.deposits ?? s?.total_deposits ?? 0
   );
 
-  const net = Number(
-    total?.net ??
-      s?.net ??
-      s?.net_today ??
-      0
-  );
+  const net = Number(total?.net ?? s?.net ?? s?.net_today ?? 0);
 
   const totalBalance = Number(
-    s?.total_balance_usd ??
-      s?.my_vault_balance ??
-      generalBalance ??
-      0
+    s?.total_balance_usd ?? s?.my_vault_balance ?? generalBalance ?? 0
   );
 
   return [
@@ -414,7 +403,7 @@ function LineChart({ data, loading }) {
     );
   }
 
-  const points = data.slice(0, 14).map((d) => {
+  const points = data.map((d) => {
     const received = Number(d.received ?? d.receive ?? d.deposits ?? 0);
     const delivered = Number(
       d.delivered ?? d.send ?? d.withdrawals ?? d.outcome ?? 0
@@ -570,7 +559,7 @@ function LineChart({ data, loading }) {
               className="fill-slate-400"
               fontSize="10"
             >
-              {p.label}
+              {String(p.label).slice(5)}
             </text>
           </g>
         ))}
