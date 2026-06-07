@@ -8,9 +8,11 @@ const authService = {
 };
 
 export async function doLogout() {
-  try { await authService.logout(); } catch {}
+  try {
+    await authService.logout();
+  } catch {}
+
   setAuthToken(null);
-  window.location.href = "/login";
 }
 
 export default authService;

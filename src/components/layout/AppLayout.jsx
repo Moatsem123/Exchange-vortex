@@ -14,23 +14,29 @@ function AppLayout() {
   const refreshUnreadCount = useCallback(async () => {
     try {
       const res = await notificationsService.unreadCount();
-      const c = res?.data?.count ?? res?.count ?? res?.data ?? 0;
-      setUnreadCount(Number(c) || 0);
-    } catch { setUnreadCount(0); }
+      const count = res?.data?.count ?? res?.count ?? res?.data ?? 0;
+      setUnreadCount(Number(count) || 0);
+    } catch {
+      setUnreadCount(0);
+    }
   }, []);
 
-  useEffect(() => { refreshUnreadCount(); }, [refreshUnreadCount]);
-
   useEffect(() => {
-    const id = setInterval(refreshUnreadCount, 60000);
-    return () => clearInterval(id);
+    refreshUnreadCount();
   }, [refreshUnreadCount]);
 
-  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    const intervalId = setInterval(refreshUnreadCount, 60000);
+    return () => clearInterval(intervalId);
+  }, [refreshUnreadCount]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   return (
     <div className="min-h-screen bg-[#f4f6fb] text-slate-900" dir="rtl">
-      <div className="hidden xl:block fixed right-0 top-0 h-screen z-30">
+      <div className="fixed right-0 top-0 z-30 hidden h-screen xl:block">
         <Sidebar unreadCount={unreadCount} />
       </div>
 
@@ -44,6 +50,7 @@ function AppLayout() {
               onClick={() => setMobileOpen(false)}
               className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm xl:hidden"
             />
+
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -59,6 +66,7 @@ function AppLayout() {
                 >
                   <X className="h-5 w-5" />
                 </button>
+
                 <Sidebar onClose={() => setMobileOpen(false)} unreadCount={unreadCount} />
               </div>
             </motion.div>
@@ -66,7 +74,7 @@ function AppLayout() {
         )}
       </AnimatePresence>
 
-      <div className="xl:mr-72 flex min-h-screen flex-col">
+      <div className="flex min-h-screen flex-col xl:mr-72">
         <Topbar
           onOpenSidebar={() => setMobileOpen(true)}
           unreadCount={unreadCount}

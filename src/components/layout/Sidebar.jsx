@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Home,
   UserRound,
@@ -18,63 +19,6 @@ import {
 } from "lucide-react";
 import BrandOrbitLogo from "../../shared/BrandOrbitLogo";
 import { useAuth } from "../../context/AuthContext";
-
-function getRoleKeys(user) {
-  const keys = [];
-
-  function collectRole(role) {
-    if (!role) return;
-
-    if (typeof role === "string") {
-      keys.push(role);
-      return;
-    }
-
-    if (typeof role === "object") {
-      keys.push(role.name, role.slug, role.key, role.code, role.label);
-    }
-  }
-
-  collectRole(user?.role);
-
-  if (Array.isArray(user?.roles)) {
-    user.roles.forEach(collectRole);
-  }
-
-  return keys.filter(Boolean).map((key) => String(key).toLowerCase());
-}
-
-function getPermissionKeys(user) {
-  const keys = [];
-
-  function collect(value) {
-    if (!value) return;
-
-    if (Array.isArray(value)) {
-      value.forEach(collect);
-      return;
-    }
-
-    if (typeof value === "string") {
-      keys.push(value);
-      return;
-    }
-
-    if (typeof value === "object") {
-      keys.push(value.name, value.slug, value.key, value.code);
-
-      if (Array.isArray(value.permissions)) {
-        collect(value.permissions);
-      }
-    }
-  }
-
-  collect(user?.permissions);
-  collect(user?.role?.permissions);
-  collect(user?.roles);
-
-  return keys.filter(Boolean).map((key) => String(key));
-}
 
 const SECTIONS = [
   {
@@ -129,41 +73,25 @@ const SECTIONS = [
         to: "/funds",
         label: "الحسابات والصناديق",
         icon: Wallet,
-        permissions: [
-          "vault.viewAny",
-          "vault.view",
-          "vault.update",
-        ],
+        permissions: ["vault.viewAny", "vault.view", "vault.update"],
       },
       {
         to: "/currencies",
         label: "العملات",
         icon: DollarSign,
-        permissions: [
-          "currency.viewAny",
-          "currency.manage",
-          "exchange_rate.update",
-        ],
+        permissions: ["currency.viewAny", "currency.manage", "exchange_rate.update"],
       },
       {
         to: "/exchange-rates",
         label: "أسعار الصرف",
         icon: TrendingUp,
-        permissions: [
-          "exchange_rate.update",
-          "currency.manage",
-        ],
+        permissions: ["exchange_rate.update", "currency.manage"],
       },
       {
         to: "/reports",
         label: "التقارير",
         icon: BarChart3,
-        permissions: [
-          "report.daily",
-          "report.monthly",
-          "report.export",
-          "report.viewAll",
-        ],
+        permissions: ["report.daily", "report.monthly", "report.export", "report.viewAll"],
       },
     ],
   },
@@ -175,20 +103,13 @@ const SECTIONS = [
         label: "الإشعارات",
         icon: Bell,
         badge: true,
-        permissions: [
-          "notification.viewAny",
-          "notification.read",
-          "notification.delete",
-        ],
+        permissions: ["notification.viewAny", "notification.read", "notification.delete"],
       },
       {
         to: "/archive",
         label: "الأرشيف",
         icon: Archive,
-        permissions: [
-          "archive.view",
-          "archive.restore",
-        ],
+        permissions: ["archive.view", "archive.restore"],
       },
     ],
   },
@@ -234,20 +155,15 @@ const SECTIONS = [
         to: "/settings",
         label: "الإعدادات",
         icon: Settings,
-        permissions: [
-          "settings.view",
-          "settings.manage",
-        ],
+        permissions: ["settings.view", "settings.manage"],
       },
     ],
   },
 ];
 
 function Sidebar({ onClose, unreadCount = 0 }) {
-  const { logout, isAdmin, user } = useAuth();
-
-  const roleKeys = getRoleKeys(user);
-  const permissions = getPermissionKeys(user);
+  const { logout, isAdmin, user, permissions = [], roleKeys = [], hasPermission } = useAuth();
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const isOwnerOrAdmin =
     isAdmin ||
@@ -264,7 +180,18 @@ function Sidebar({ onClose, unreadCount = 0 }) {
     if (isOwnerOrAdmin) return true;
     if (item.ownerOrAdminOnly) return false;
     if (!item.permissions || item.permissions.length === 0) return true;
+
+    if (typeof hasPermission === "function") {
+      return hasPermission(item.permissions);
+    }
+
     return item.permissions.some((permission) => permissions.includes(permission));
+  }
+
+  function handleConfirmLogout() {
+    setConfirmLogout(false);
+    onClose?.();
+    logout();
   }
 
   return (
@@ -312,28 +239,14 @@ function Sidebar({ onClose, unreadCount = 0 }) {
             const items = section.items.filter(canSee);
             if (items.length === 0) return null;
 
-            const isUsersManagement = section.label === "إدارة الصفحات والمستخدمون";
-
             return (
               <div key={section.label} className="mb-4">
-                <p
-                  className={[
-                    "mb-2 px-4 text-right text-[11px] font-black",
-                    isUsersManagement ? "text-teal-400" : "text-slate-500",
-                  ].join(" ")}
-                >
+                <p className="mb-2 px-4 text-right text-[11px] font-black text-slate-500">
                   {section.label}
                 </p>
 
-                <ul
-                  className={[
-                    "space-y-1",
-                    isUsersManagement
-                      ? "rounded-2xl border border-white/5 bg-white/[0.03] p-2"
-                      : "",
-                  ].join(" ")}
-                >
-                  {items.map((item, idx) => {
+                <ul className="space-y-1">
+                  {items.map((item, index) => {
                     const Icon = item.icon;
 
                     return (
@@ -341,7 +254,7 @@ function Sidebar({ onClose, unreadCount = 0 }) {
                         key={item.to}
                         initial={{ x: 12, opacity: 0 }}
                         animate={{ x: 0, opacity: 1 }}
-                        transition={{ duration: 0.25, delay: idx * 0.02 }}
+                        transition={{ duration: 0.25, delay: index * 0.02 }}
                       >
                         <NavLink
                           to={item.to}
@@ -364,11 +277,7 @@ function Sidebar({ onClose, unreadCount = 0 }) {
                                 <Icon
                                   className={[
                                     "h-[18px] w-[18px] shrink-0 transition",
-                                    isActive
-                                      ? "text-white"
-                                      : isUsersManagement
-                                      ? "text-teal-400 group-hover:text-teal-300"
-                                      : "text-slate-400 group-hover:text-white",
+                                    isActive ? "text-white" : "text-slate-400 group-hover:text-white",
                                   ].join(" ")}
                                 />
                               </div>
@@ -393,7 +302,7 @@ function Sidebar({ onClose, unreadCount = 0 }) {
         <div className="relative border-t border-white/5 px-3 py-3">
           <motion.button
             type="button"
-            onClick={logout}
+            onClick={() => setConfirmLogout(true)}
             initial={{ x: 12, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.25, delay: 0.1 }}
@@ -406,7 +315,68 @@ function Sidebar({ onClose, unreadCount = 0 }) {
           </motion.button>
         </div>
       </aside>
+
+      <LogoutConfirmDialog
+        open={confirmLogout}
+        onClose={() => setConfirmLogout(false)}
+        onConfirm={handleConfirmLogout}
+      />
     </>
+  );
+}
+
+function LogoutConfirmDialog({ open, onClose, onConfirm }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 px-4 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          dir="rtl"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.96 }}
+            transition={{ duration: 0.18 }}
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 text-right shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                <LogOut className="h-5 w-5" />
+              </div>
+
+              <div className="flex-1">
+                <h3 className="text-base font-black text-slate-900">تأكيد تسجيل الخروج</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  هل تريد تسجيل الخروج من النظام؟
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-start gap-2">
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white transition hover:bg-rose-700"
+              >
+                تسجيل الخروج
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                إلغاء
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

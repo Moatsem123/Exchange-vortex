@@ -63,7 +63,6 @@ function LoginPage() {
   return (
     <div className="min-h-screen" dir="rtl" style={{ background: "#f4f6fb" }}>
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-        {/* ============ يسار: فورم اللوجين ============ */}
         <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-4 py-10 sm:px-8 lg:order-2">
           <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(13,148,136,0.16)_1px,transparent_1px)] [background-size:18px_18px]" />
           <div className="pointer-events-none absolute -bottom-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-teal-300/15 blur-3xl" />
@@ -280,7 +279,6 @@ function LoginPage() {
           </motion.div>
         </section>
 
-        {/* ============ يمين: الـ hero (الصورة تملأ كل الخلفية + كفة ناعمة) ============ */}
         <section
           className="relative hidden min-h-screen w-full items-center justify-center overflow-hidden lg:order-1 lg:flex lg:rounded-l-[1.75rem]"
           style={{ background: "#0a1628" }}
@@ -299,5 +297,5 @@ function LoginPage() {
     </div>
   );
 }
-////////
+
 export default LoginPage;

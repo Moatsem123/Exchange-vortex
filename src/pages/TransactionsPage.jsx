@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -15,17 +15,12 @@ import {
   Loader2,
   TrendingUp,
   TrendingDown,
-  Calendar,
   Search,
-  FileText,
-  User,
-  DollarSign,
-  Copy,
-  CheckCheck,
-  CalendarDays,
   MapPin,
   Phone,
   CreditCard,
+  Copy,
+  CheckCheck,
 } from "lucide-react";
 
 import EmptyState from "../shared/EmptyState";
@@ -41,7 +36,6 @@ import {
   extractApiError,
   formatDate,
   formatMoney,
-  formatRelative,
   unwrapList,
 } from "../shared/helpers";
 
@@ -95,13 +89,78 @@ const TYPE_OPTIONS = [
   { value: "transfer", label: "تحويل" },
 ];
 
-
 function getTypeMeta(type) {
   return TX_TYPE_META[type] || TX_TYPE_META.receive;
 }
 
 function getStatusMeta(status) {
   return STATUS_META[status] || STATUS_META.completed;
+}
+
+function getFromCustomer(tx) {
+  return (
+    tx?.from_customer ||
+    tx?.fromCustomer ||
+    tx?.sender_customer ||
+    tx?.senderCustomer ||
+    tx?.source_customer ||
+    tx?.sourceCustomer ||
+    null
+  );
+}
+
+function getToCustomer(tx) {
+  return (
+    tx?.to_customer ||
+    tx?.toCustomer ||
+    tx?.receiver_customer ||
+    tx?.receiverCustomer ||
+    tx?.target_customer ||
+    tx?.targetCustomer ||
+    null
+  );
+}
+
+function getFromCustomerName(tx) {
+  return (
+    getFromCustomer(tx)?.name ||
+    tx?.from_customer_name ||
+    tx?.fromCustomerName ||
+    tx?.sender_customer_name ||
+    tx?.sender_name ||
+    tx?.source_customer_name ||
+    tx?.from_name ||
+    "—"
+  );
+}
+
+function getToCustomerName(tx) {
+  return (
+    getToCustomer(tx)?.name ||
+    tx?.to_customer_name ||
+    tx?.toCustomerName ||
+    tx?.receiver_customer_name ||
+    tx?.receiver_name ||
+    tx?.target_customer_name ||
+    tx?.to_name ||
+    "—"
+  );
+}
+
+function getMainCustomerName(tx) {
+  if (tx?.type === "transfer") {
+    return `من ${getFromCustomerName(tx)} إلى ${getToCustomerName(tx)}`;
+  }
+
+  return tx?.customer?.name || tx?.customer_name || tx?.beneficiary_name || tx?.counterparty || "—";
+}
+
+function getMainCustomerPhone(tx) {
+  return tx?.customer?.phone || getFromCustomer(tx)?.phone || getToCustomer(tx)?.phone || "";
+}
+
+function getMainCustomerEmail(tx) {
+  return tx?.customer?.email || getFromCustomer(tx)?.email || getToCustomer(tx)?.email || "";
 }
 
 function TransactionsPage() {
@@ -117,6 +176,7 @@ function TransactionsPage() {
     last_page: 1,
     per_page: PER_PAGE,
   });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -145,7 +205,6 @@ function TransactionsPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [busy, setBusy] = useState(false);
 
-
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -159,11 +218,14 @@ function TransactionsPage() {
 
       const { items: list, meta: m } = unwrapList(res);
       const term = search.trim().toLowerCase();
+
       const filteredList = term
         ? list.filter((tx) => {
-            const customerName = tx.customer?.name?.toLowerCase() || "";
-            const customerPhone = tx.customer?.phone || "";
-            const customerEmail = tx.customer?.email?.toLowerCase() || "";
+            const customerName = getMainCustomerName(tx).toLowerCase();
+            const customerPhone = getMainCustomerPhone(tx);
+            const customerEmail = getMainCustomerEmail(tx).toLowerCase();
+            const fromName = getFromCustomerName(tx).toLowerCase();
+            const toName = getToCustomerName(tx).toLowerCase();
             const reference = tx.reference_number?.toLowerCase() || "";
             const note = tx.note?.toLowerCase() || "";
 
@@ -171,6 +233,8 @@ function TransactionsPage() {
               customerName.includes(term) ||
               customerPhone.includes(term) ||
               customerEmail.includes(term) ||
+              fromName.includes(term) ||
+              toName.includes(term) ||
               reference.includes(term) ||
               note.includes(term)
             );
@@ -197,7 +261,7 @@ function TransactionsPage() {
   }, [load]);
 
   const loadStats = useCallback(async () => {
-    setStats((s) => ({ ...s, loading: true }));
+    setStats((state) => ({ ...state, loading: true }));
 
     try {
       const res = await dashboardService.summary("7d");
@@ -215,7 +279,7 @@ function TransactionsPage() {
         loading: false,
       });
     } catch {
-      setStats((s) => ({ ...s, loading: false }));
+      setStats((state) => ({ ...state, loading: false }));
     }
   }, []);
 
@@ -243,12 +307,18 @@ function TransactionsPage() {
 
   async function handleDelete() {
     if (!confirmDelete) return;
+
     setBusy(true);
+
     try {
       await transactionsService.remove(confirmDelete.id);
       toast.success("تم حذف المعاملة");
       setConfirmDelete(null);
-      if (selectedId && Number(selectedId) === confirmDelete.id) setSelectedId(null);
+
+      if (selectedId && Number(selectedId) === confirmDelete.id) {
+        setSelectedId(null);
+      }
+
       load();
       loadStats();
     } catch (err) {
@@ -281,12 +351,12 @@ function TransactionsPage() {
   return (
     <div className="min-h-screen bg-slate-50" dir="rtl">
       <div className="p-4 sm:p-6 lg:p-8">
-        {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-500 to-teal-700 shadow-lg shadow-teal-500/20">
               <ArrowRightLeft className="h-7 w-7 text-white" />
             </div>
+
             <div>
               <h1 className="text-2xl font-black text-slate-900">المعاملات</h1>
               <p className="mt-1 text-sm text-slate-500">
@@ -296,7 +366,6 @@ function TransactionsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -327,6 +396,7 @@ function TransactionsPage() {
 
             <div className="relative min-w-[260px] flex-1 max-w-md">
               <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
               <input
                 type="text"
                 value={searchInput}
@@ -346,7 +416,6 @@ function TransactionsPage() {
           </div>
         </div>
 
-        {/* Stats */}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard
             label="إجمالي الحركات"
@@ -363,7 +432,10 @@ function TransactionsPage() {
             value={formatMoney(stats.totalDeposits)}
             icon={ArrowDownLeft}
             color="emerald"
-            trend={{ value: stats.depositsChange, direction: stats.depositsChange >= 0 ? "up" : "down" }}
+            trend={{
+              value: stats.depositsChange,
+              direction: stats.depositsChange >= 0 ? "up" : "down",
+            }}
             suffix="USD"
             loading={stats.loading}
           />
@@ -389,7 +461,6 @@ function TransactionsPage() {
           />
         </div>
 
-        {/* Table */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           {loading ? (
             <div className="flex items-center justify-center py-16">
@@ -419,6 +490,7 @@ function TransactionsPage() {
                       <th className="whitespace-nowrap px-4 py-3">التاريخ والوقت</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {items.map((tx) => (
                       <TransactionRow
@@ -432,7 +504,6 @@ function TransactionsPage() {
                 </table>
               </div>
 
-              {/* Pagination */}
               <div className="border-t border-slate-200 px-4 py-3">
                 <Pagination
                   currentPage={meta.current_page}
@@ -447,7 +518,6 @@ function TransactionsPage() {
         </div>
       </div>
 
-      {/* Details Panel */}
       <AnimatePresence>
         {selectedId && (
           <TransactionDetailsPanel
@@ -459,7 +529,6 @@ function TransactionsPage() {
         )}
       </AnimatePresence>
 
-      {/* Modals */}
       <AnimatePresence>
         {confirmDelete && (
           <ConfirmDialog
@@ -517,7 +586,7 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
     },
   };
 
-  const c = colorStyles[color] || colorStyles.blue;
+  const currentColor = colorStyles[color] || colorStyles.blue;
 
   if (loading) {
     return (
@@ -535,15 +604,13 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
         group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm
         transition-all duration-300 cursor-pointer
         hover:-translate-y-1 hover:shadow-xl
-        ${c.border} ${c.glow}
-        bg-gradient-to-l from-transparent to-white ${c.gradient}
+        ${currentColor.border} ${currentColor.glow}
+        bg-gradient-to-l from-transparent to-white ${currentColor.gradient}
       `}
     >
       <div className="flex items-start justify-between">
         <div className="text-right flex-1">
-          <span className="text-sm font-bold text-slate-500">
-            {label}
-          </span>
+          <span className="text-sm font-bold text-slate-500">{label}</span>
 
           <div className="mt-3">
             <span className="text-4xl font-black text-slate-900 transition group-hover:text-slate-950">
@@ -552,19 +619,16 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
           </div>
 
           <div className="mt-2">
-            <span className="text-xs text-slate-400">
-              {suffix}
-            </span>
+            <span className="text-xs text-slate-400">{suffix}</span>
           </div>
 
           {trend && (
             <div className="mt-3 flex items-center justify-end gap-1.5">
               <span className="text-xs text-slate-500">عن الفترة السابقة</span>
+
               <span
                 className={`flex items-center gap-1 text-xs font-black ${
-                  trend.direction === "up"
-                    ? "text-emerald-600"
-                    : "text-rose-600"
+                  trend.direction === "up" ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
                 {trend.direction === "up" ? (
@@ -582,7 +646,7 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
           className={`
             flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl
             border transition-all duration-300
-            ${c.iconBg} ${c.iconText}
+            ${currentColor.iconBg} ${currentColor.iconText}
             group-hover:scale-110 group-hover:rotate-3
           `}
         >
@@ -596,13 +660,13 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
 function FilterSelect({ value, onChange, options, placeholder }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const selected = options.find((opt) => opt.value === value);
+  const selected = options.find((option) => option.value === value);
 
   return (
     <div className="relative w-44" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen((value) => !value)}
         className={`flex h-11 w-full cursor-pointer items-center justify-between rounded-xl border px-4 text-sm font-black transition ${
           open
             ? "border-slate-300 bg-white text-slate-950 shadow-sm"
@@ -622,23 +686,25 @@ function FilterSelect({ value, onChange, options, placeholder }) {
             transition={{ duration: 0.15 }}
             className="absolute right-0 top-full z-30 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-2 shadow-xl shadow-slate-200/70"
           >
-            {options.filter((opt) => opt.value !== "").map((opt) => (
-              <button
-                key={opt.value || "all"}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setOpen(false);
-                }}
-                className={`block w-full cursor-pointer rounded-xl px-3 py-2.5 text-right text-sm font-bold transition ${
-                  value === opt.value
-                    ? "bg-slate-100 text-slate-950"
-                    : "text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+            {options
+              .filter((option) => option.value !== "")
+              .map((option) => (
+                <button
+                  key={option.value || "all"}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`block w-full cursor-pointer rounded-xl px-3 py-2.5 text-right text-sm font-bold transition ${
+                    value === option.value
+                      ? "bg-slate-100 text-slate-950"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
           </motion.div>
         )}
       </AnimatePresence>
@@ -678,33 +744,64 @@ function TransactionRow({ transaction, onView, onDelete }) {
           </button>
         </div>
       </td>
+
       <td className="px-4 py-3">
         <p className="text-xs text-slate-500">{formatDate(transaction.created_at)}</p>
-        <p className="text-xs text-slate-400">{new Date(transaction.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })} ص</p>
+        <p className="text-xs text-slate-400">
+          {new Date(transaction.created_at).toLocaleTimeString("ar-EG", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}{" "}
+          ص
+        </p>
       </td>
+
       <td className="px-4 py-3">
-        <p className="text-sm font-bold text-slate-900">{transaction.reference_number || "—"}</p>
+        <p className="text-sm font-bold text-slate-900">
+          {transaction.reference_number || "—"}
+        </p>
         <p className="text-xs text-slate-500">{transaction.user?.name || "—"}</p>
       </td>
+
       <td className="px-4 py-3">
-        <p className="text-sm font-bold text-slate-900">{transaction.customer?.name || "—"}</p>
+        {transaction.type === "transfer" ? (
+          <div className="space-y-1">
+            <p className="text-sm font-black text-slate-900">
+              من {getFromCustomerName(transaction)}
+            </p>
+            <p className="text-xs font-bold text-slate-500">
+              إلى {getToCustomerName(transaction)}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm font-bold text-slate-900">
+            {getMainCustomerName(transaction)}
+          </p>
+        )}
       </td>
+
       <td className="px-4 py-3">
         <p className={`text-sm font-black ${amountColor}`}>
-          {amountPrefix}{formatMoney(Math.abs(amount))}
+          {amountPrefix}
+          {formatMoney(Math.abs(amount))}
         </p>
         <p className="text-xs text-slate-500">{transaction.currency_code || "USD"}</p>
       </td>
+
       <td className="px-4 py-3">
         <Badge color={meta.color} icon={meta.icon}>
           {meta.label}
         </Badge>
       </td>
+
       <td className="px-4 py-3">
         <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
       </td>
+
       <td className="px-4 py-3">
-        <p className="text-xs text-slate-500">{formatDate(transaction.transaction_date || transaction.created_at)}</p>
+        <p className="text-xs text-slate-500">
+          {formatDate(transaction.transaction_date || transaction.created_at)}
+        </p>
       </td>
     </tr>
   );
@@ -727,6 +824,7 @@ function TransactionDetailsPanel({ transactionId, data, loading, onClose }) {
   const statusMeta = data ? getStatusMeta(data.status) : null;
   const isPositive = data?.type === "receive" || data?.type === "exchange";
   const amount = Number(data?.amount || 0);
+  const isTransfer = data?.type === "transfer";
 
   return (
     <motion.div
@@ -743,7 +841,6 @@ function TransactionDetailsPanel({ transactionId, data, loading, onClose }) {
         </div>
       ) : (
         <>
-          {/* Header */}
           <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-6">
             <div className="flex items-center justify-between">
               <button
@@ -753,88 +850,154 @@ function TransactionDetailsPanel({ transactionId, data, loading, onClose }) {
               >
                 <X className="h-5 w-5" />
               </button>
+
               <h2 className="text-lg font-black text-slate-900">تفاصيل المعاملة</h2>
             </div>
           </div>
 
-          {/* Content */}
           <div className="p-6 space-y-6">
-            {/* Amount Card */}
             <div className={`rounded-2xl border ${meta?.borderColor} ${meta?.bgColor} p-6 text-center`}>
               <Badge color={statusMeta?.color} className="mb-3">
                 {statusMeta?.label}
               </Badge>
+
               <div className="flex items-center justify-center gap-2 mb-2">
                 <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${meta?.bgColor} ${meta?.textColor}`}>
                   {meta && <meta.icon className="h-6 w-6" />}
                 </div>
               </div>
+
               <p className="text-sm font-bold text-slate-600 mb-2">{meta?.label}</p>
+
               <p className={`text-4xl font-black ${isPositive ? "text-emerald-600" : "text-rose-600"}`}>
-                {isPositive ? "+" : "-"}{formatMoney(Math.abs(amount))}
+                {isPositive ? "+" : "-"}
+                {formatMoney(Math.abs(amount))}
               </p>
+
               <p className="text-sm text-slate-500 mt-1">{data?.currency_code || "USD"}</p>
             </div>
 
-            {/* Reference */}
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between">
                 <div className="text-right flex-1">
                   <p className="text-xs font-bold text-slate-500">المرجع</p>
-                  <p className="text-sm font-black text-slate-900 mt-1">{data?.reference_number || "—"}</p>
+                  <p className="text-sm font-black text-slate-900 mt-1">
+                    {data?.reference_number || "—"}
+                  </p>
                 </div>
+
                 <button
                   type="button"
                   onClick={handleCopy}
                   className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-slate-600 transition hover:bg-slate-100"
                 >
-                  {copied ? <CheckCheck className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  {copied ? (
+                    <CheckCheck className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
 
-            {/* Transaction Info */}
             <div className="space-y-3">
               <h3 className="text-sm font-black text-slate-900">معلومات المعاملة</h3>
-              
-              <InfoRow label="رسوم المعاملة" value={`${formatMoney(data?.commission_usd || 0)} USD`} />
-              <InfoRow label="المستفيد" value={data?.counterparty || "—"} />
-              <InfoRow label="سعر الصرف" value={`1 USD = ${data?.exchange_rate || "1.0000"} ${data?.currency_code || "USD"}`} />
-              <InfoRow label="المبلغ بـ USD" value={`${formatMoney(data?.net_usd_value ?? data?.usd_value ?? 0)} USD`} />
+
+              <InfoRow
+                label="رسوم المعاملة"
+                value={`${formatMoney(data?.commission_usd || 0)} USD`}
+              />
+
+              {isTransfer ? (
+                <>
+                  <InfoRow label="من" value={getFromCustomerName(data)} />
+                  <InfoRow label="إلى" value={getToCustomerName(data)} />
+                </>
+              ) : (
+                <InfoRow
+                  label="المستفيد"
+                  value={data?.counterparty || data?.customer?.name || data?.customer_name || "—"}
+                />
+              )}
+
+              <InfoRow
+                label="سعر الصرف"
+                value={`1 USD = ${data?.exchange_rate || "1.0000"} ${data?.currency_code || "USD"}`}
+              />
+              <InfoRow
+                label="المبلغ بـ USD"
+                value={`${formatMoney(data?.net_usd_value ?? data?.usd_value ?? 0)} USD`}
+              />
               <InfoRow label="طريقة الدفع" value="نقدي" />
               <InfoRow label="الفرع الرئيسي" value={data?.branch || "—"} />
               <InfoRow label="القناة" value="—" />
               <InfoRow label="الموظف المنفذ" value={data?.user?.name || "—"} />
             </div>
 
-            {/* Customer Info */}
-            {data?.customer && (
+            {isTransfer ? (
               <div className="space-y-3">
-                <h3 className="text-sm font-black text-slate-900">بيانات العميل</h3>
-                
-                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-                  <p className="text-sm font-black text-slate-900 mb-3">{data.customer.name}</p>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <Phone className="h-3.5 w-3.5" />
-                      <span>{data.customer.phone || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <MapPin className="h-3.5 w-3.5" />
-                      <span>{data.customer.country || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <CreditCard className="h-3.5 w-3.5" />
-                      <span>CUST-{data.customer.id}</span>
-                    </div>
-                  </div>
-                </div>
+                <h3 className="text-sm font-black text-slate-900">أطراف التحويل</h3>
+
+                <CustomerMiniCard
+                  title="من"
+                  customer={getFromCustomer(data)}
+                  fallbackName={getFromCustomerName(data)}
+                  fallbackId={data?.from_customer_id}
+                />
+
+                <CustomerMiniCard
+                  title="إلى"
+                  customer={getToCustomer(data)}
+                  fallbackName={getToCustomerName(data)}
+                  fallbackId={data?.to_customer_id}
+                />
               </div>
+            ) : (
+              data?.customer && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-black text-slate-900">بيانات العميل</h3>
+
+                  <CustomerMiniCard
+                    title="العميل"
+                    customer={data.customer}
+                    fallbackName={data.customer.name}
+                    fallbackId={data.customer.id}
+                  />
+                </div>
+              )
             )}
           </div>
         </>
       )}
     </motion.div>
+  );
+}
+
+function CustomerMiniCard({ title, customer, fallbackName, fallbackId }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+      <p className="text-xs font-bold text-slate-500 mb-1">{title}</p>
+      <p className="text-sm font-black text-slate-900 mb-3">
+        {customer?.name || fallbackName || "—"}
+      </p>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <Phone className="h-3.5 w-3.5" />
+          <span>{customer?.phone || "—"}</span>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <MapPin className="h-3.5 w-3.5" />
+          <span>{customer?.country || "—"}</span>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <CreditCard className="h-3.5 w-3.5" />
+          <span>{fallbackId || customer?.id ? `CUST-${fallbackId || customer?.id}` : "—"}</span>
+        </div>
+      </div>
+    </div>
   );
 }
 

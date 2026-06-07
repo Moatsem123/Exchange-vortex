@@ -58,9 +58,11 @@ export function unwrapData(res) {
 
 export function normalizeArray(res) {
   const data = unwrapData(res);
+
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.items)) return data.items;
+
   return [];
 }
 
@@ -88,6 +90,7 @@ export function normalizePermissionsResponse(res) {
 
 export function permissionKey(permission) {
   if (typeof permission === "string") return permission;
+
   return String(permission?.name || "");
 }
 
@@ -98,6 +101,7 @@ export function getRoleName(user) {
 
   if (Array.isArray(user?.roles) && user.roles[0]) {
     if (typeof user.roles[0] === "string") return user.roles[0];
+
     return user.roles[0].name || "—";
   }
 
@@ -127,12 +131,7 @@ export function getPermissionLabel(permission) {
 export function getPermissionModule(permission) {
   const name = getPermissionName(permission);
 
-  return (
-    permission?.group ||
-    permission?.module ||
-    name.split(".")[0] ||
-    "other"
-  );
+  return permission?.group || permission?.module || name.split(".")[0] || "other";
 }
 
 export function getPermissionModuleLabel(permission) {
@@ -145,19 +144,24 @@ export function getPermissionModuleLabel(permission) {
 
 export function getPermissionActionKey(permission) {
   const name = getPermissionName(permission);
+
   return permission?.action || name.split(".").slice(1).join(".") || "";
 }
 
 export function getPermissionAction(permission) {
   const action = getPermissionActionKey(permission);
+
   return ACTION_LABELS[action] || action || "صلاحية";
 }
 
 export function groupPermissions(permissions = []) {
   return permissions.reduce((result, permission) => {
     const group = getPermissionModule(permission);
+
     if (!result[group]) result[group] = [];
+
     result[group].push(permission);
+
     return result;
   }, {});
 }

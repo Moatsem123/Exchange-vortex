@@ -43,8 +43,10 @@ function Shell() {
 
   useEffect(() => {
     if (SPLASH_MS <= 0) return;
-    const t = setTimeout(() => setShowSplash(false), SPLASH_MS);
-    return () => clearTimeout(t);
+
+    const timer = setTimeout(() => setShowSplash(false), SPLASH_MS);
+
+    return () => clearTimeout(timer);
   }, []);
 
   if (showSplash || bootstrapping) return <PageLoader />;
@@ -56,11 +58,6 @@ function Shell() {
           <Route
             path="/login"
             element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />}
-          />
-
-          <Route
-            path="/change-password"
-            element={isLoggedIn ? <ChangePasswordPage /> : <Navigate to="/login" replace />}
           />
 
           <Route element={isLoggedIn ? <AppLayout /> : <Navigate to="/login" replace />}>
@@ -75,15 +72,18 @@ function Shell() {
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/archive" element={<ArchivePage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/change-password" element={<ChangePasswordPage />} />
 
             <Route
               path="/users"
               element={isAdmin ? <UsersPage /> : <Navigate to="/dashboard" replace />}
             />
+
             <Route
               path="/roles"
               element={isAdmin ? <RolesPage /> : <Navigate to="/dashboard" replace />}
             />
+
             <Route
               path="/permissions"
               element={isAdmin ? <PermissionsPage /> : <Navigate to="/dashboard" replace />}

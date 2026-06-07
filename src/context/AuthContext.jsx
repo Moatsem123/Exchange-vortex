@@ -1,9 +1,12 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import authService, { doLogout } from "../services/auth";
 import { setAuthToken } from "../services/api";
-import usersPermissionsService from "../services/usersPermissions";
 
 const AuthContext = createContext(null);
+
+function unwrapData(res) {
+  return res?.data || res;
+}
 
 function getRoleKeys(user) {
   const keys = [];
@@ -27,7 +30,9 @@ function getRoleKeys(user) {
     user.roles.forEach(collectRole);
   }
 
-  return keys.filter(Boolean).map((value) => String(value).toLowerCase());
+  return Array.from(
+    new Set(keys.filter(Boolean).map((value) => String(value).toLowerCase()))
+  );
 }
 
 function getPermissionKeys(user) {
@@ -59,33 +64,12 @@ function getPermissionKeys(user) {
   collect(user?.role?.permissions);
   collect(user?.roles);
 
-  return keys.filter(Boolean).map((value) => String(value));
+  return Array.from(new Set(keys.filter(Boolean).map((value) => String(value))));
 }
 
-function unwrapData(res) {
-  return res?.data || res;
-}
-
-async function loadFullUser() {
+async function loadCurrentUser() {
   const meRes = await authService.me();
-  const me = unwrapData(meRes);
-
-  if (!me?.id) return me;
-
-  try {
-    const fullUserRes = await usersPermissionsService.users.show(me.id);
-    const fullUser = unwrapData(fullUserRes);
-
-    return {
-      ...me,
-      ...fullUser,
-      roles: fullUser?.roles || me?.roles || [],
-      permissions: fullUser?.permissions || me?.permissions || [],
-      vault: fullUser?.vault || me?.vault || null,
-    };
-  } catch {
-    return me;
-  }
+  return unwrapData(meRes);
 }
 
 export function AuthProvider({ children }) {
@@ -95,14 +79,16 @@ export function AuthProvider({ children }) {
 
   const loadMe = useCallback(async () => {
     if (!localStorage.getItem("token")) {
+      setUser(null);
+      setIsLoggedIn(false);
       setBootstrapping(false);
       return;
     }
 
     try {
-      const fullUser = await loadFullUser();
+      const currentUser = await loadCurrentUser();
 
-      setUser(fullUser);
+      setUser(currentUser);
       setIsLoggedIn(true);
     } catch {
       setAuthToken(null);
@@ -121,7 +107,9 @@ export function AuthProvider({ children }) {
     const res = await authService.login({ email, password });
     const token = res?.data?.token || res?.token;
 
-    if (!token) throw new Error("لم يتم استلام التوكن من الخادم");
+    if (!token) {
+      throw new Error("لم يتم استلام التوكن من الخادم");
+    }
 
     setAuthToken(token);
     setIsLoggedIn(true);
@@ -135,6 +123,7 @@ export function AuthProvider({ children }) {
   function logout() {
     setUser(null);
     setIsLoggedIn(false);
+    setBootstrapping(false);
     doLogout();
   }
 
@@ -151,10 +140,17 @@ export function AuthProvider({ children }) {
     roleKeys.includes("super_admin") ||
     roleKeys.includes("مالك");
 
-  function hasPermission(required = []) {
+  function hasPermission(required = [], mode = "any") {
     if (isAdmin) return true;
     if (!required || required.length === 0) return true;
-    return required.some((permission) => permissions.includes(permission));
+
+    const list = Array.isArray(required) ? required : [required];
+
+    if (mode === "all") {
+      return list.every((permission) => permissions.includes(permission));
+    }
+
+    return list.some((permission) => permissions.includes(permission));
   }
 
   return (
@@ -179,6 +175,10 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+
+  if (!ctx) {
+    throw new Error("useAuth must be used within AuthProvider");
+  }
+
   return ctx;
 }
