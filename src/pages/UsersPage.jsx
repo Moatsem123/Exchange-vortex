@@ -44,6 +44,15 @@ import {
 
 const PER_PAGE = 10;
 
+function isOwnerUser(user) {
+  return (
+    user?.is_owner === true ||
+    user?.email === "owner@exchange.com" ||
+    getRoleName(user) === "owner" ||
+    user?.roles?.some?.((role) => role?.name === "owner" || role === "owner")
+  );
+}
+
 export default function UsersPage() {
   const toast = useToast();
 
@@ -190,6 +199,12 @@ export default function UsersPage() {
 
   async function handleDelete() {
     if (!confirmDeleteUser) return;
+
+    if (isOwnerUser(confirmDeleteUser)) {
+      toast.error("لا يمكن حذف حساب المالك");
+      setConfirmDeleteUser(null);
+      return;
+    }
 
     setBusy(true);
 
@@ -525,6 +540,7 @@ function UserRow({ user, index, busy, onView, onEdit, onVault, onToggle, onResto
   const isDeleted = !!user.deleted_at;
   const isActive = user.is_active !== false && !isDeleted;
   const balance = user.initial_balance ?? user.vault?.balance_usd ?? user.vault?.initial_balance ?? 0;
+  const isOwner = isOwnerUser(user);
 
   return (
     <motion.tr
@@ -598,7 +614,9 @@ function UserRow({ user, index, busy, onView, onEdit, onVault, onToggle, onResto
             </>
           )}
 
-          <ActionBtn icon={Trash2} onClick={onDelete} color="rose" title="حذف" disabled={busy} />
+          {!isOwner && (
+            <ActionBtn icon={Trash2} onClick={onDelete} color="rose" title="حذف" disabled={busy} />
+          )}
         </div>
       </td>
     </motion.tr>

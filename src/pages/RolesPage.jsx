@@ -36,6 +36,10 @@ import {
   groupPermissions,
 } from "./usersPermissionsHelpers";
 
+function isOwnerRole(role) {
+  return role?.name === "owner" || role?.key === "owner" || role?.slug === "owner";
+}
+
 export default function RolesPage() {
   const toast = useToast();
 
@@ -64,6 +68,8 @@ export default function RolesPage() {
     () => groupPermissions(permissions),
     [permissions]
   );
+
+  const activeRoleIsOwner = isOwnerRole(activeRole);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,6 +136,12 @@ export default function RolesPage() {
 
   async function handleDelete() {
     if (!confirmDeleteRole) return;
+
+    if (isOwnerRole(confirmDeleteRole)) {
+      toast.error("لا يمكن حذف دور المالك");
+      setConfirmDeleteRole(null);
+      return;
+    }
 
     setBusy(true);
 
@@ -292,14 +304,16 @@ export default function RolesPage() {
                         تعديل الدور
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteRole(activeRole)}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-100 active:scale-95"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        حذف
-                      </button>
+                      {!activeRoleIsOwner && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteRole(activeRole)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-100 active:scale-95"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          حذف
+                        </button>
+                      )}
                     </div>
 
                     <div className="text-right">

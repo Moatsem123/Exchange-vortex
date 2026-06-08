@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import {
   ChartNoAxesColumnIncreasing,
   FileText,
-  FileSpreadsheet,
   RefreshCw,
   ArrowDown,
   DollarSign,
@@ -470,18 +469,6 @@ function ReportsPage() {
           )}
 
           <div className="mr-auto flex items-end gap-2">
-            <motion.button
-              type="button"
-              onClick={() => handleExport("excel")}
-              disabled={exporting || loading}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-sm font-bold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FileSpreadsheet className="h-4 w-4" />
-              {exporting ? "جارٍ التصدير..." : "تصدير Excel"}
-            </motion.button>
-
             <motion.button
               type="button"
               onClick={() => handleExport("pdf")}
