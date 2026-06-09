@@ -183,12 +183,12 @@ function DashboardPage() {
       </div>
 
       {error && !loading ? (
-        <div className="ep-card-static">
+        <div className="ep-card-static min-w-0 overflow-hidden">
           <ErrorState title="تعذّر تحميل البيانات" onRetry={load} />
         </div>
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
             {stats.map((s, idx) => (
               <StatCard
                 key={s.title}
@@ -201,7 +201,7 @@ function DashboardPage() {
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1.6fr]">
             <ScrollReveal>
-              <div className="ep-card-static h-full">
+              <div className="ep-card-static min-w-0 overflow-hidden h-full">
                 <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                   <h3 className="text-base font-black text-slate-900">
                     أحدث المعاملات
@@ -221,7 +221,7 @@ function DashboardPage() {
             </ScrollReveal>
 
             <ScrollReveal delay={0.1}>
-              <div className="ep-card-static h-full p-5">
+              <div className="ep-card-static min-w-0 overflow-hidden h-full p-5">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-right">
                     <h3 className="text-base font-black text-slate-900">
@@ -239,7 +239,7 @@ function DashboardPage() {
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <ScrollReveal>
-              <div className="ep-card-static h-full p-5">
+              <div className="ep-card-static min-w-0 overflow-hidden h-full p-5">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-base font-black text-slate-900">
                     تنبيهات النظام
@@ -258,7 +258,7 @@ function DashboardPage() {
             </ScrollReveal>
 
             <ScrollReveal delay={0.05}>
-              <div className="ep-card-static h-full p-5">
+              <div className="ep-card-static min-w-0 overflow-hidden h-full p-5">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-right text-base font-black text-slate-900">
                     أداء الفروع
@@ -275,7 +275,7 @@ function DashboardPage() {
             </ScrollReveal>
 
             <ScrollReveal delay={0.1}>
-              <div className="ep-card-static h-full p-5">
+              <div className="ep-card-static min-w-0 overflow-hidden h-full p-5">
                 <h3 className="mb-4 text-right text-base font-black text-slate-900">
                   توزيع المعاملات حسب النوع
                 </h3>

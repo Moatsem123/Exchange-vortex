@@ -34,6 +34,7 @@ import dashboardService from "../services/dashboard";
 import { useAuth } from "../context/AuthContext";
 import {
   extractApiError,
+  formatCompactNumber,
   formatDate,
   formatMoney,
   unwrapList,
@@ -429,7 +430,7 @@ function TransactionsPage() {
 
           <StatsCard
             label="إيداعات"
-            value={formatMoney(stats.totalDeposits)}
+            value={stats.totalDeposits}
             icon={ArrowDownLeft}
             color="emerald"
             trend={{
@@ -442,7 +443,7 @@ function TransactionsPage() {
 
           <StatsCard
             label="سحوبات"
-            value={formatMoney(stats.totalWithdrawals)}
+            value={stats.totalWithdrawals}
             icon={ArrowUpRight}
             color="rose"
             trend={{ value: Math.abs(stats.withdrawalsChange), direction: "down" }}
@@ -452,7 +453,7 @@ function TransactionsPage() {
 
           <StatsCard
             label="صافي الحركة"
-            value={formatMoney(stats.netMovement)}
+            value={stats.netMovement}
             icon={Coins}
             color="violet"
             trend={{ value: stats.netChange, direction: "up" }}
@@ -587,10 +588,12 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
   };
 
   const currentColor = colorStyles[color] || colorStyles.blue;
+  const numberValue = Number(value || 0);
+  const displayValue = suffix === "USD" ? formatCompactNumber(numberValue) : formatCompactNumber(numberValue);
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
         </div>
@@ -601,20 +604,24 @@ function StatsCard({ label, value, icon: Icon, color, trend, suffix, loading }) 
   return (
     <div
       className={`
-        group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm
+        group min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm
         transition-all duration-300 cursor-pointer
         hover:-translate-y-1 hover:shadow-xl
         ${currentColor.border} ${currentColor.glow}
         bg-gradient-to-l from-transparent to-white ${currentColor.gradient}
       `}
     >
-      <div className="flex items-start justify-between">
-        <div className="text-right flex-1">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 text-right">
           <span className="text-sm font-bold text-slate-500">{label}</span>
 
           <div className="mt-3">
-            <span className="text-4xl font-black text-slate-900 transition group-hover:text-slate-950">
-              {value}
+            <span
+              className="block max-w-full truncate text-2xl font-black text-slate-900 transition group-hover:text-slate-950 sm:text-3xl"
+              dir="ltr"
+              title={String(value)}
+            >
+              {displayValue}
             </span>
           </div>
 

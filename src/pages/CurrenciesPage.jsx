@@ -97,14 +97,14 @@ function CurrenciesPage() {
         }
       />
 
-      <div className="ep-card-static p-4">
+      <div className="ep-card-static min-w-0 overflow-hidden p-4">
         <div className="relative">
           <Search className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث عن عملة..." className="ep-input pr-11" />
         </div>
       </div>
 
-      <div className="ep-card-static overflow-hidden">
+      <div className="ep-card-static min-w-0 overflow-hidden">
         {error && !loading ? (
           <ErrorState onRetry={load} />
         ) : loading ? (

@@ -253,7 +253,7 @@ export default function UsersPage() {
     <div className="space-y-6" dir="rtl">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-teal-100 text-teal-700 shadow-sm">
+          <div className="flex min-w-0 overflow-hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-teal-100 text-teal-700 shadow-sm">
             <UsersRound className="h-7 w-7" />
           </div>
 
@@ -311,7 +311,7 @@ export default function UsersPage() {
       </div>
 
       <ScrollReveal>
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <div className="relative min-w-[180px] flex-1 sm:max-w-sm">
@@ -516,7 +516,7 @@ function StatCard({ label, value, icon: Icon, color, note }) {
   return (
     <motion.div
       whileHover={{ y: -3, boxShadow: "0 8px 24px -6px rgba(0,0,0,.08)" }}
-      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl min-w-0 overflow-hidden border border-slate-200 bg-white p-5 shadow-sm"
     >
       <div className="flex items-start justify-between gap-3">
         <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${cls[color]}`}>
@@ -661,7 +661,7 @@ function UserDetailsPanel({ user, roles, onClose }) {
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
-          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-6 text-center">
+          <div className="rounded-2xl min-w-0 overflow-hidden border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-6 text-center">
             <UserAvatar user={user} size="lg" />
             <p className="mt-4 text-xl font-black text-slate-900">{user.name || "—"}</p>
             <p className="mt-0.5 font-mono text-xs text-slate-500" dir="ltr">
@@ -691,7 +691,7 @@ function UserDetailsPanel({ user, roles, onClose }) {
             <InfoTile icon={Wallet} label="رصيد الصندوق" value={`${formatMoney(balance)} USD`} mono />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="rounded-2xl min-w-0 overflow-hidden border border-slate-200 bg-white p-4">
             <h3 className="mb-3 text-sm font-black text-slate-800">
               صلاحيات الدور
               {perms.length > 0 && (

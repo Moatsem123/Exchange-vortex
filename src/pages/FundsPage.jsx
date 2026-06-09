@@ -126,7 +126,7 @@ function FundsPage() {
         }
       />
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <StatCard
           title="إجمالي الرصيد"
           value={stats.totalBalance}
@@ -166,7 +166,7 @@ function FundsPage() {
         <ErrorState onRetry={load} />
       ) : (
         <>
-          <div className="ep-card-static overflow-x-auto p-4">
+          <div className="ep-card-static min-w-0 overflow-x-auto p-4">
             <div className="flex min-w-min gap-3">
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
@@ -190,14 +190,14 @@ function FundsPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.5fr]">
-            <div className="ep-card-static p-5">
+            <div className="ep-card-static min-w-0 overflow-hidden p-5">
               <h3 className="mb-4 text-right text-base font-black text-slate-900">
                 تفاصيل الصندوق المحدد
               </h3>
 
               {selected ? (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                  <div className="rounded-2xl min-w-0 overflow-hidden border border-emerald-200 bg-emerald-50/40 p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-violet-200 bg-violet-100 text-violet-700">
                         <Wallet className="h-6 w-6" />
@@ -290,7 +290,7 @@ function FundsPage() {
               )}
             </div>
 
-            <div className="ep-card-static overflow-hidden">
+            <div className="ep-card-static min-w-0 overflow-hidden">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                 <button
                   type="button"

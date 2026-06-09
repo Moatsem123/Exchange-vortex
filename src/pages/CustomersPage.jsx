@@ -627,7 +627,7 @@ function CustomersPage() {
         </div>
       </div>
 
-      <section className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 [&>*]:relative [&>*]:!z-0">
+      <section className="relative z-0 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4 [&>*]:relative [&>*]:!z-0">
         {statCards.map((card, index) => (
           <StatCard
             key={card.title}
@@ -638,7 +638,7 @@ function CustomersPage() {
         ))}
       </section>
             <ScrollReveal>
-        <div className="relative z-0 ep-card-static overflow-visible">
+        <div className="relative min-w-0 z-0 ep-card-static overflow-visible">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div className="relative w-full max-w-md">
               <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1035,7 +1035,7 @@ function FilterDropdown({ value, options, onChange }) {
             animate={{ opacity: 1, y: 4, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16 }}
-            className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-2xl"
+            className="absolute min-w-0 right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-2xl"
           >
             {menuOptions.map((option) => {
               const active = String(option.value) === String(value);
@@ -1140,7 +1140,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
 
   if (loading && !data) {
     return (
-      <div className="ep-card-static p-6">
+      <div className="ep-card-static min-w-0 overflow-hidden p-6">
         <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
           جارٍ تحميل تفاصيل العميل...
@@ -1156,7 +1156,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
 
   return (
     <ScrollReveal>
-      <div className="ep-card-static overflow-hidden">
+      <div className="ep-card-static min-w-0 overflow-hidden">
         <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-[1.1fr_1fr_1.2fr]">
           <section className="order-3 xl:order-1">
             <div className="mb-3 flex items-center justify-between">
@@ -1167,7 +1167,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
             </div>
 
             {transactions.length === 0 ? (
-              <div className="flex min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
+              <div className="flex min-w-0 overflow-hidden min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
                 <ArrowRightLeft className="mb-2 h-6 w-6 text-slate-400" />
                 <p className="text-xs font-black text-slate-700">لا توجد معاملات</p>
                 <p className="mt-1 text-[10px] text-slate-400">
@@ -1272,7 +1272,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
               <h4 className="text-sm font-black text-slate-900">بيانات العميل</h4>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="mt-4 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="flex items-center gap-5 text-right" dir="rtl">
                 <DefaultAvatar customer={customer} size="lg" />
 
@@ -1438,7 +1438,7 @@ function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUS
         </div>
 
         {permissionsLoading ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-xs font-bold text-slate-500">
+          <div className="flex min-w-0 overflow-hidden items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-xs font-bold text-slate-500">
             <Loader2 className="h-4 w-4 animate-spin" />
             جارٍ تحميل الصلاحيات...
           </div>
@@ -1489,7 +1489,7 @@ function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUS
   return (
     <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
       {!initial && selectedMeta && (
-        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex min-w-0 overflow-hidden items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
           <button
             type="button"
             onClick={() => setSelectedType(null)}

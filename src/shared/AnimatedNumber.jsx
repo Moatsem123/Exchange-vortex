@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
-function AnimatedNumber({ value = 0, duration = 700, formatter }) {
+function AnimatedNumber({
+  value = 0,
+  duration = 700,
+  formatter,
+  prefix = "",
+  suffix = "",
+  decimals = 0,
+}) {
   const [display, setDisplay] = useState(0);
   const startRef = useRef(0);
+  const frameRef = useRef(null);
 
   useEffect(() => {
     const start = startRef.current;
@@ -17,16 +25,29 @@ function AnimatedNumber({ value = 0, duration = 700, formatter }) {
       setDisplay(current);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        frameRef.current = requestAnimationFrame(animate);
       } else {
         startRef.current = end;
       }
     };
 
-    requestAnimationFrame(animate);
+    frameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
   }, [value, duration]);
 
-  return formatter ? formatter(display) : Math.round(display).toLocaleString("en-US");
+  if (formatter) {
+    return formatter(display);
+  }
+
+  return `${prefix}${Number(display || 0).toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}${suffix}`;
 }
 
 export default AnimatedNumber;

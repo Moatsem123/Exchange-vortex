@@ -608,7 +608,7 @@ function AddTransactionPage() {
           </div>
 
           <aside className="space-y-3">
-            <div className="ep-card-static sticky top-24 p-5">
+            <div className="ep-card-static min-w-0 overflow-hidden sticky top-24 p-5">
               <div className="mb-4 flex items-center justify-between">
                 <Calculator className="h-5 w-5 text-slate-400" />
 
@@ -772,7 +772,7 @@ function BalanceHint({ customer }) {
 
 function Section({ title, subtitle, icon: Icon, children }) {
   return (
-    <div className="ep-card-static p-5">
+    <div className="ep-card-static min-w-0 overflow-hidden p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex-1 text-right">
           <h3 className="text-base font-black text-slate-900">{title}</h3>
