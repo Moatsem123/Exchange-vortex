@@ -11,35 +11,37 @@ export function formatMoney(value, options = {}) {
 export function formatNumber(value, locale = "en-US") {
   return new Intl.NumberFormat(locale).format(Number(value || 0));
 }
-
-export function formatCompactNumber(value) {
+export function formatCompactNumber(value, options = {}) {
+  const { maxDecimals = 6 } = options;
   const number = Number(value || 0);
 
   if (!Number.isFinite(number)) return "0";
 
   const abs = Math.abs(number);
 
+  function trimZeros(text) {
+    return text.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
+  }
+
+  function formatDivided(divisor, suffix) {
+    const divided = number / divisor;
+    return `${trimZeros(divided.toFixed(maxDecimals))}${suffix}`;
+  }
+
   if (abs >= 1000000000) {
-    return `${(number / 1000000000)
-      .toFixed(abs >= 10000000000 ? 0 : 1)
-      .replace(/\.0$/, "")}B`;
+    return formatDivided(1000000000, "B");
   }
 
   if (abs >= 1000000) {
-    return `${(number / 1000000)
-      .toFixed(abs >= 10000000 ? 0 : 1)
-      .replace(/\.0$/, "")}M`;
+    return formatDivided(1000000, "M");
   }
 
   if (abs >= 1000) {
-    return `${(number / 1000)
-      .toFixed(abs >= 10000 ? 0 : 1)
-      .replace(/\.0$/, "")}K`;
+    return formatDivided(1000, "K");
   }
 
   return number.toLocaleString("en-US");
 }
-
 export function formatDate(iso, options = {}) {
   if (!iso) return "—";
 
