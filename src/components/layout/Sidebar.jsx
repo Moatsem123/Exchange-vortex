@@ -8,7 +8,6 @@ import {
   PlusCircle,
   Wallet,
   DollarSign,
-  TrendingUp,
   BarChart3,
   Bell,
   Archive,
@@ -70,22 +69,16 @@ const SECTIONS = [
         permissions: ["transaction.create"],
       },
       {
-        to: "/funds",
-        label: "الحسابات والصناديق",
+        to: "/boxes",
+        label: "الصناديق",
         icon: Wallet,
         permissions: ["vault.viewAny", "vault.view", "vault.update"],
       },
       {
         to: "/currencies",
-        label: "العملات",
+        label: "العملات وأسعار الصرف",
         icon: DollarSign,
         permissions: ["currency.viewAny", "currency.manage", "exchange_rate.update"],
-      },
-      {
-        to: "/exchange-rates",
-        label: "أسعار الصرف",
-        icon: TrendingUp,
-        permissions: ["exchange_rate.update", "currency.manage"],
       },
       {
         to: "/reports",

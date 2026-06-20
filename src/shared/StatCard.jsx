@@ -3,13 +3,48 @@ import AnimatedNumber from "./AnimatedNumber";
 import { formatCompactNumber } from "./helpers";
 
 const PALETTE = {
-  emerald: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", glow: "rgba(16,185,129,0.18)" },
-  teal: { bg: "bg-teal-50", border: "border-teal-200", text: "text-teal-700", glow: "rgba(13,148,136,0.18)" },
-  rose: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", glow: "rgba(244,63,94,0.18)" },
-  blue: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", glow: "rgba(37,99,235,0.18)" },
-  violet: { bg: "bg-violet-50", border: "border-violet-200", text: "text-violet-700", glow: "rgba(124,58,237,0.18)" },
-  amber: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", glow: "rgba(217,119,6,0.18)" },
-  slate: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700", glow: "rgba(71,85,105,0.14)" },
+  emerald: {
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+    glow: "rgba(16,185,129,0.18)",
+  },
+  teal: {
+    bg: "bg-teal-50",
+    border: "border-teal-200",
+    text: "text-teal-700",
+    glow: "rgba(13,148,136,0.18)",
+  },
+  rose: {
+    bg: "bg-rose-50",
+    border: "border-rose-200",
+    text: "text-rose-700",
+    glow: "rgba(244,63,94,0.18)",
+  },
+  blue: {
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    text: "text-blue-700",
+    glow: "rgba(37,99,235,0.18)",
+  },
+  violet: {
+    bg: "bg-violet-50",
+    border: "border-violet-200",
+    text: "text-violet-700",
+    glow: "rgba(124,58,237,0.18)",
+  },
+  amber: {
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    text: "text-amber-700",
+    glow: "rgba(217,119,6,0.18)",
+  },
+  slate: {
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+    text: "text-slate-700",
+    glow: "rgba(71,85,105,0.14)",
+  },
 };
 
 function StatCard({
@@ -29,7 +64,7 @@ function StatCard({
   const c = PALETTE[color] || PALETTE.emerald;
   const positive = changeDir === "up";
   const numberValue = Number(value || 0);
-  const isCompact = Math.abs(numberValue) >= 1000;
+  const isCompact = Math.abs(numberValue) >= 1000000;
 
   return (
     <motion.div
@@ -44,7 +79,7 @@ function StatCard({
         style={{ background: c.glow }}
       />
 
-      <div className="relative z-10 flex items-start justify-between gap-4">
+      <div className="relative z-10 flex h-full items-start justify-between gap-4">
         <div className="min-w-0 flex-1 text-right">
           <p className="truncate text-xs font-bold text-slate-500">{title}</p>
 
@@ -61,11 +96,16 @@ function StatCard({
             ) : isCompact ? (
               <span>
                 {prefix}
-                {formatCompactNumber(numberValue)}
+                {formatCompactNumber(numberValue, { maxDecimals: decimals > 0 ? decimals : 2 })}
                 {suffix}
               </span>
             ) : (
-              <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />
+              <AnimatedNumber
+                value={numberValue}
+                prefix={prefix}
+                suffix={suffix}
+                decimals={decimals}
+              />
             )}
           </div>
 
@@ -81,13 +121,16 @@ function StatCard({
                   {positive ? "↑" : "↓"} {change}
                 </span>
               )}
+
               {note && <span className="truncate text-slate-400">{note}</span>}
             </div>
           )}
         </div>
 
         {Icon && (
-          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-all duration-300 group-hover:scale-110 group-hover:rotate-[-4deg] ${c.bg} ${c.border} ${c.text}`}>
+          <div
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-all duration-300 group-hover:scale-110 group-hover:rotate-[-4deg] ${c.bg} ${c.border} ${c.text}`}
+          >
             <Icon className="h-6 w-6" />
           </div>
         )}

@@ -13,8 +13,8 @@ const CustomersPage = lazy(() => import("./pages/CustomersPage"));
 const TransactionsPage = lazy(() => import("./pages/TransactionsPage"));
 const AddTransactionPage = lazy(() => import("./pages/AddTransactionPage"));
 const CurrenciesPage = lazy(() => import("./pages/CurrenciesPage"));
-const ExchangeRatesPage = lazy(() => import("./pages/ExchangeRatesPage"));
-const FundsPage = lazy(() => import("./pages/FundsPage"));
+const BoxesPage = lazy(() => import("./pages/BoxesPage"));
+const BoxGroupPage = lazy(() => import("./pages/BoxGroupPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ArchivePage = lazy(() => import("./pages/ArchivePage"));
@@ -65,9 +65,13 @@ function Shell() {
             <Route path="/customers" element={<CustomersPage />} />
             <Route path="/transactions" element={<TransactionsPage />} />
             <Route path="/add-transaction" element={<AddTransactionPage />} />
+
             <Route path="/currencies" element={<CurrenciesPage />} />
-            <Route path="/exchange-rates" element={<ExchangeRatesPage />} />
-            <Route path="/funds" element={<FundsPage />} />
+            <Route path="/exchange-rates" element={<Navigate to="/currencies" replace />} />
+
+            <Route path="/boxes" element={<BoxesPage />} />
+            <Route path="/boxes/:type" element={<BoxGroupPage />} />
+
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/archive" element={<ArchivePage />} />

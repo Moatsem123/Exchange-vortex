@@ -2,6 +2,19 @@ export function formatMoney(value, options = {}) {
   const { decimals = 2, locale = "en-US" } = options;
   const num = Number(value || 0);
 
+  if (!Number.isFinite(num)) return "0.00";
+
+  const abs = Math.abs(num);
+
+  if (abs >= 1000000) {
+    return new Intl.NumberFormat(locale, {
+      notation: "compact",
+      compactDisplay: "short",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(num);
+  }
+
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -12,35 +25,25 @@ export function formatNumber(value, locale = "en-US") {
   return new Intl.NumberFormat(locale).format(Number(value || 0));
 }
 export function formatCompactNumber(value, options = {}) {
-  const { maxDecimals = 6 } = options;
+  const { maxDecimals = 2, locale = "en-US" } = options;
   const number = Number(value || 0);
 
   if (!Number.isFinite(number)) return "0";
 
   const abs = Math.abs(number);
 
-  function trimZeros(text) {
-    return text.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
-  }
-
-  function formatDivided(divisor, suffix) {
-    const divided = number / divisor;
-    return `${trimZeros(divided.toFixed(maxDecimals))}${suffix}`;
-  }
-
   if (abs >= 1000000000) {
-    return formatDivided(1000000000, "B");
+    return `${(number / 1000000000).toFixed(maxDecimals).replace(/\.?0+$/, "")}B`;
   }
 
   if (abs >= 1000000) {
-    return formatDivided(1000000, "M");
+    return `${(number / 1000000).toFixed(maxDecimals).replace(/\.?0+$/, "")}M`;
   }
 
-  if (abs >= 1000) {
-    return formatDivided(1000, "K");
-  }
-
-  return number.toLocaleString("en-US");
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(number);
 }
 export function formatDate(iso, options = {}) {
   if (!iso) return "—";
@@ -130,9 +133,10 @@ export function getAmountSign(type) {
 }
 
 export function extractApiError(err, fallback = "حدث خطأ غير متوقع") {
-  if (err?.response?.status === 401) return "غير مصرح بالوصول";
+  if (err?.response?.status === 401) return "البريد الإلكتروني أو كلمة المرور غير صحيحة";
   if (err?.response?.status === 403) return "ليس لديك صلاحية للقيام بهذا الإجراء";
   if (err?.response?.status === 404) return "المورد المطلوب غير موجود";
+  if (err?.response?.status === 500) return "حدث خطأ في الخادم، يرجى المحاولة لاحقًا";
 
   if (err?.response?.status === 422) {
     const errors = err.response.data?.errors;
@@ -145,7 +149,22 @@ export function extractApiError(err, fallback = "حدث خطأ غير متوقع
     return err.response.data?.message || "بيانات غير صالحة";
   }
 
-  if (err?.response?.data?.message) return err.response.data.message;
+  if (err?.response?.data?.message) {
+    const message = String(err.response.data.message);
+
+    if (
+      message.includes("SQLSTATE") ||
+      message.includes("Undefined column") ||
+      message.includes("Integrity constraint") ||
+      message.includes("QueryException") ||
+      message.includes("Internal Server Error")
+    ) {
+      return "حدث خطأ في الخادم، يرجى المحاولة لاحقًا";
+    }
+
+    return message;
+  }
+
   if (err?.message) return err.message;
 
   return fallback;
