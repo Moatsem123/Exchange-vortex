@@ -15,4 +15,4 @@ export async function doLogout() {
   setAuthToken(null);
 }
 
-export default authService;
+export default authService; 

@@ -12,7 +12,6 @@ import {
   Trash2,
   RotateCcw,
   X,
-  MapPin,
   ChevronDown,
   Loader2,
   CalendarDays,
@@ -24,7 +23,6 @@ import {
   Check,
   Search,
   Building2,
-  ShieldCheck,
   TrendingUp,
   DollarSign,
 } from "lucide-react";
@@ -52,18 +50,15 @@ import {
 
 const PER_PAGE = 5;
 
-const CATEGORY_META = {
-  regular: { label: "فرد", color: "teal", icon: UserRoundCheck },
-  individual: { label: "فرد", color: "teal", icon: UserRoundCheck },
-  company: { label: "شركة", color: "violet", icon: Building2 },
-  vip: { label: "VIP", color: "amber", icon: ShieldCheck },
+const TYPE_META = {
+  customer: { label: "عميل", color: "teal", icon: UserRoundCheck },
+  supplier: { label: "مورد", color: "violet", icon: Building2 },
 };
 
-const CATEGORY_OPTIONS = [
+const TYPE_OPTIONS = [
   { value: "", label: "نوع العميل" },
-  { value: "regular", label: "فرد" },
-  { value: "company", label: "شركة" },
-  { value: "vip", label: "VIP" },
+  { value: "customer", label: "عميل" },
+  { value: "supplier", label: "مورد" },
 ];
 
 const STATUS_OPTIONS = [
@@ -73,40 +68,13 @@ const STATUS_OPTIONS = [
   { value: "deleted", label: "محذوف" },
 ];
 
-const CUSTOMER_CREATE_TYPES = [
-  {
-    value: "regular",
-    label: "فرد",
-    description: "عميل فرد ببيانات أساسية",
-    icon: UserRoundCheck,
-    color: "teal",
-    permissions: ["customer.create", "customer.store", "customer.create.regular", "customer.create.individual"],
-  },
-  {
-    value: "company",
-    label: "شركة",
-    description: "حساب شركة مع بيانات تجارية",
-    icon: Building2,
-    color: "violet",
-    permissions: ["customer.create", "customer.store", "customer.create.company"],
-  },
-  {
-    value: "vip",
-    label: "VIP",
-    description: "عميل مميز بصلاحيات وحدود إضافية",
-    icon: ShieldCheck,
-    color: "amber",
-    permissions: ["customer.create", "customer.store", "customer.create.vip"],
-  },
-];
+function getTypeMeta(type) {
+  return TYPE_META[type] || TYPE_META.customer;
+}
 
 function collectPermissionKeys(value) {
   if (!value) return [];
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => collectPermissionKeys(item));
-  }
-
+  if (Array.isArray(value)) return value.flatMap((item) => collectPermissionKeys(item));
   if (typeof value === "string") return [value];
 
   if (typeof value === "object") {
@@ -126,17 +94,6 @@ function collectPermissionKeys(value) {
 function normalizePermissions(res) {
   const data = res?.data?.data ?? res?.data ?? res ?? [];
   return collectPermissionKeys(data);
-}
-
-function canCreateType(type, permissions, isAdmin) {
-  if (isAdmin) return true;
-  const required = type.permissions || [];
-  return required.some((permission) => permissions.includes(permission));
-}
-
-
-function getCategoryMeta(category) {
-  return CATEGORY_META[category] || CATEGORY_META.regular;
 }
 
 function isThisMonth(date) {
@@ -180,6 +137,7 @@ function CustomersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const { user, isAdmin } = useAuth();
+  const detailsRef = useRef(null);
 
   const [items, setItems] = useState([]);
   const [meta, setMeta] = useState({
@@ -195,11 +153,9 @@ function CustomersPage() {
   const [error, setError] = useState(null);
 
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [country, setCountry] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
-  const [cities, setCities] = useState([]);
 
   const [stats, setStats] = useState({
     total: 0,
@@ -219,7 +175,9 @@ function CustomersPage() {
   const [confirmRestore, setConfirmRestore] = useState(null);
   const [confirmForce, setConfirmForce] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [permissions, setPermissions] = useState(() => collectPermissionKeys(user?.permissions || user?.role?.permissions || []));
+  const [permissions, setPermissions] = useState(() =>
+    collectPermissionKeys(user?.permissions || user?.role?.permissions || [])
+  );
   const [permissionsLoading, setPermissionsLoading] = useState(false);
 
   const withTrashed = statusFilter === "" || statusFilter === "deleted";
@@ -254,7 +212,7 @@ function CustomersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, category, country, statusFilter]);
+  }, [search, typeFilter, statusFilter]);
 
   const loadBalancesForItems = useCallback(async (customers) => {
     if (!customers.length) {
@@ -290,8 +248,7 @@ function CustomersPage() {
         per_page: PER_PAGE,
         with_trashed: withTrashed,
         ...(search && { search }),
-        ...(category && { category }),
-        ...(country && { country }),
+        ...(typeFilter && { type: typeFilter }),
       });
 
       let { items: list, meta: m } = unwrapList(res);
@@ -324,7 +281,7 @@ function CustomersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, withTrashed, search, category, country, statusFilter, loadBalancesForItems]);
+  }, [page, withTrashed, search, typeFilter, statusFilter, loadBalancesForItems]);
 
   useEffect(() => {
     load();
@@ -347,10 +304,6 @@ function CustomersPage() {
       const activeTotal = Number(active.meta?.total ?? active.items.length ?? 0);
       const allTotal = Number(all.meta?.total ?? all.items.length ?? activeTotal);
 
-      const uniqueCities = Array.from(
-        new Set(sample.map((c) => (c.country || "").trim()).filter(Boolean))
-      );
-
       let totalBalance = 0;
 
       await Promise.all(
@@ -366,7 +319,6 @@ function CustomersPage() {
           })
       );
 
-      setCities(uniqueCities);
       setStats({
         total: allTotal || activeTotal,
         active: activeTotal,
@@ -418,6 +370,17 @@ function CustomersPage() {
   }, [selectedId]);
 
   useEffect(() => {
+    if (selectedId) {
+      setTimeout(() => {
+        detailsRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 150);
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
     const next = new URLSearchParams(searchParams);
 
     if (selectedId) next.set("id", String(selectedId));
@@ -436,7 +399,7 @@ function CustomersPage() {
 
     try {
       await customersService.create(payload);
-      toast.success("تمت إضافة العميل بنجاح");
+      toast.success(payload.type === "supplier" ? "تمت إضافة المورد بنجاح" : "تمت إضافة العميل بنجاح");
       setOpenAdd(false);
       await Promise.all([load(), loadStats()]);
     } catch (err) {
@@ -451,7 +414,7 @@ function CustomersPage() {
 
     try {
       await customersService.update(id, payload);
-      toast.success("تم تحديث بيانات العميل");
+      toast.success("تم تحديث البيانات");
       setEditCustomer(null);
       await Promise.all([load(), loadStats()]);
 
@@ -473,7 +436,7 @@ function CustomersPage() {
 
     try {
       await customersService.remove(confirmDelete.id);
-      toast.success("تم نقل العميل إلى الأرشيف");
+      toast.success("تم النقل إلى الأرشيف");
 
       if (String(selectedId) === String(confirmDelete.id)) setSelectedId(null);
 
@@ -493,7 +456,7 @@ function CustomersPage() {
 
     try {
       await customersService.restore(confirmRestore.id);
-      toast.success("تمت استعادة العميل");
+      toast.success("تمت الاستعادة");
       setConfirmRestore(null);
       await Promise.all([load(), loadStats()]);
     } catch (err) {
@@ -510,7 +473,7 @@ function CustomersPage() {
 
     try {
       await customersService.forceDelete(confirmForce.id);
-      toast.success("تم حذف العميل نهائيًا");
+      toast.success("تم الحذف نهائيًا");
 
       if (String(selectedId) === String(confirmForce.id)) setSelectedId(null);
 
@@ -523,16 +486,6 @@ function CustomersPage() {
     }
   }
 
-  const allowedCustomerTypes = useMemo(
-    () => CUSTOMER_CREATE_TYPES.filter((type) => canCreateType(type, permissions, isAdmin)),
-    [permissions, isAdmin]
-  );
-
-  const cityOptions = useMemo(
-    () => [{ value: "", label: "المدينة" }, ...cities.map((c) => ({ value: c, label: c }))],
-    [cities]
-  );
-
   const tableTotalBalance = useMemo(
     () => items.reduce((sum, c) => sum + getCustomerBalance(c, balancesMap), 0),
     [items, balancesMap]
@@ -544,17 +497,17 @@ function CustomersPage() {
       value: stats.total,
       icon: UsersRound,
       color: "amber",
-      note: "كل العملاء المسجلين",
+      note: "كل العملاء والموردين",
     },
     {
-      title: "العملاء النشطون",
+      title: "النشطون",
       value: stats.active,
       icon: TrendingUp,
       color: "blue",
       note: "نشطون وغير محذوفين",
     },
     {
-      title: "العملاء الجدد هذا الشهر",
+      title: "الجدد هذا الشهر",
       value: stats.newThisMonth,
       icon: UserPlus,
       color: "violet",
@@ -566,7 +519,7 @@ function CustomersPage() {
       prefix: "$",
       icon: DollarSign,
       color: "emerald",
-      note: "حسب أرصدة العملاء المتاحة",
+      note: "حسب الأرصدة المتاحة",
       decimals: 2,
     },
   ];
@@ -580,25 +533,15 @@ function CustomersPage() {
           </div>
 
           <div className="text-right">
-            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">
-              العملاء
-            </h1>
-            <p className="text-xs text-slate-500 sm:text-sm">
-              إدارة ومتابعة جميع عملاء شركة الصرافة
-            </p>
+            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">العملاء</h1>
+            <p className="text-xs text-slate-500 sm:text-sm">إدارة ومتابعة العملاء والموردين</p>
           </div>
         </div>
 
         <div className="relative z-20 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (!permissionsLoading && allowedCustomerTypes.length === 0 && !isAdmin) {
-                toast.error("لا تملك صلاحية إضافة عميل");
-                return;
-              }
-              setOpenAdd(true);
-            }}
+            onClick={() => setOpenAdd(true)}
             disabled={permissionsLoading}
             className="inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
             style={{ background: "hsl(179, 87%, 28%)" }}
@@ -607,16 +550,14 @@ function CustomersPage() {
             إضافة عميل
           </button>
 
-          <FilterDropdown value={category} options={CATEGORY_OPTIONS} onChange={setCategory} />
-          <FilterDropdown value={country} options={cityOptions} onChange={setCountry} />
+          <FilterDropdown value={typeFilter} options={TYPE_OPTIONS} onChange={setTypeFilter} />
           <FilterDropdown value={statusFilter} options={STATUS_OPTIONS} onChange={setStatusFilter} />
 
           <button
             type="button"
             onClick={() => {
               setSearch("");
-              setCategory("");
-              setCountry("");
+              setTypeFilter("");
               setStatusFilter("");
             }}
             className="inline-flex h-11 items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 text-xs font-black text-teal-700 transition hover:bg-teal-100"
@@ -637,7 +578,8 @@ function CustomersPage() {
           />
         ))}
       </section>
-            <ScrollReveal>
+
+      <ScrollReveal>
         <div className="relative min-w-0 z-0 ep-card-static overflow-visible">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div className="relative w-full max-w-md">
@@ -645,7 +587,7 @@ function CustomersPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="ابحث بالاسم أو الهاتف أو المدينة..."
+                placeholder="ابحث بالاسم أو كود العميل..."
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white pr-10 pl-4 text-right text-sm font-bold text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10"
               />
             </div>
@@ -653,24 +595,20 @@ function CustomersPage() {
             <div className="text-right">
               <h3 className="text-base font-black text-slate-900">قائمة العملاء</h3>
               <p className="mt-1 text-[11px] font-bold text-slate-400">
-                {loading ? "جارٍ التحميل..." : `${meta.total ?? items.length} عميل`}
+                {loading ? "جارٍ التحميل..." : `${meta.total ?? items.length} سجل`}
               </p>
             </div>
           </div>
 
           {error && !loading ? (
-            <ErrorState
-              title="تعذّر تحميل العملاء"
-              description={extractApiError(error)}
-              onRetry={load}
-            />
+            <ErrorState title="تعذّر تحميل العملاء" description={extractApiError(error)} onRetry={load} />
           ) : loading ? (
             <TableSkeleton />
           ) : items.length === 0 ? (
             <EmptyState
               icon={UsersRound}
-              title="لا يوجد عملاء"
-              description="لم يتم العثور على عملاء مطابقين للبحث أو الفلاتر"
+              title="لا توجد بيانات"
+              description="لم يتم العثور على عملاء أو موردين مطابقين للبحث أو الفلاتر"
             />
           ) : (
             <>
@@ -679,8 +617,8 @@ function CustomersPage() {
                   <thead>
                     <tr>
                       <th className="text-right">العميل</th>
-                      <th className="text-right">رقم الهاتف</th>
-                      <th className="text-right">المدينة</th>
+                      <th className="text-right">كود العميل</th>
+                      <th className="text-right">التصنيف</th>
                       <th className="text-right">الرصيد</th>
                       <th className="text-right">الحالة</th>
                       <th className="text-right">آخر معاملة</th>
@@ -690,7 +628,7 @@ function CustomersPage() {
 
                   <tbody>
                     {items.map((customer) => {
-                      const categoryMeta = getCategoryMeta(customer.category);
+                      const typeMeta = getTypeMeta(customer.type);
                       const selected = String(selectedId) === String(customer.id);
                       const balance = getCustomerBalance(customer, balancesMap);
 
@@ -704,28 +642,18 @@ function CustomersPage() {
                           className={`ep-row cursor-pointer ${selected ? "bg-teal-50/70" : ""}`}
                         >
                           <td>
-                            <div
-                              className="flex min-w-[250px] items-center justify-start gap-3 text-right"
-                              dir="rtl"
-                            >
+                            <div className="flex min-w-[250px] items-center justify-start gap-3 text-right" dir="rtl">
                               <DefaultAvatar customer={customer} size="md" />
 
                               <div className="min-w-0 flex-1 text-right">
-                                <p className="font-black text-slate-900">
-                                  {customer.name}
-                                </p>
+                                <p className="font-black text-slate-900">{customer.name}</p>
 
-                                <p
-                                  className="mt-0.5 truncate text-[11px] text-slate-500"
-                                  dir="rtl"
-                                >
+                                <p className="mt-0.5 truncate text-[11px] text-slate-500" dir="rtl">
                                   {customer.note || "—"}
                                 </p>
 
                                 <div className="mt-1 inline-flex">
-                                  <Badge color={categoryMeta.color}>
-                                    {categoryMeta.label}
-                                  </Badge>
+                                  <Badge color={typeMeta.color}>{typeMeta.label}</Badge>
                                 </div>
                               </div>
                             </div>
@@ -733,15 +661,12 @@ function CustomersPage() {
 
                           <td>
                             <span dir="ltr" className="font-mono text-xs text-slate-700">
-                              {customer.phone || "—"}
+                              {customer.customer_code || "—"}
                             </span>
                           </td>
 
-                          <td className="text-xs text-slate-600">
-                            <span className="inline-flex items-center gap-1">
-                              <MapPin className="h-3 w-3 text-slate-400" />
-                              {customer.country || "—"}
-                            </span>
+                          <td>
+                            <Badge color={typeMeta.color}>{typeMeta.label}</Badge>
                           </td>
 
                           <td>
@@ -749,11 +674,7 @@ function CustomersPage() {
                               dir="ltr"
                               className={[
                                 "font-mono text-xs font-black",
-                                balance > 0
-                                  ? "text-emerald-600"
-                                  : balance < 0
-                                    ? "text-rose-600"
-                                    : "text-slate-700",
+                                balance > 0 ? "text-emerald-600" : balance < 0 ? "text-rose-600" : "text-slate-700",
                               ].join(" ")}
                             >
                               {balance > 0 ? "+" : ""}
@@ -778,48 +699,25 @@ function CustomersPage() {
                           </td>
 
                           <td className="text-xs text-slate-500">
-                            {formatRelative(
-                              customer.last_transaction_at ||
-                                customer.updated_at ||
-                                customer.created_at
-                            )}
+                            {formatRelative(customer.last_transaction_at || customer.updated_at || customer.created_at)}
                           </td>
 
                           <td onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-1">
-                              <IconBtn
-                                icon={Eye}
-                                onClick={() => setSelectedId(String(customer.id))}
-                                color="teal"
-                              />
+                              <IconBtn icon={Eye} onClick={() => setSelectedId(String(customer.id))} color="teal" />
 
                               {!customer.deleted_at && (
                                 <>
-                                  <IconBtn
-                                    icon={Edit3}
-                                    onClick={() => setEditCustomer(customer)}
-                                  />
-                                  <IconBtn
-                                    icon={Trash2}
-                                    onClick={() => setConfirmDelete(customer)}
-                                    color="rose"
-                                  />
+                                  <IconBtn icon={Edit3} onClick={() => setEditCustomer(customer)} />
+                                  <IconBtn icon={Trash2} onClick={() => setConfirmDelete(customer)} color="rose" />
                                 </>
                               )}
 
                               {customer.deleted_at && (
                                 <>
-                                  <IconBtn
-                                    icon={RotateCcw}
-                                    onClick={() => setConfirmRestore(customer)}
-                                    color="emerald"
-                                  />
+                                  <IconBtn icon={RotateCcw} onClick={() => setConfirmRestore(customer)} color="emerald" />
                                   {isAdmin && (
-                                    <IconBtn
-                                      icon={Trash2}
-                                      onClick={() => setConfirmForce(customer)}
-                                      color="rose"
-                                    />
+                                    <IconBtn icon={Trash2} onClick={() => setConfirmForce(customer)} color="rose" />
                                   )}
                                 </>
                               )}
@@ -846,19 +744,21 @@ function CustomersPage() {
         </div>
       </ScrollReveal>
 
-      <AnimatePresence>
-        {selectedId && (
-          <CustomerDetailPanel
-            key={selectedId}
-            data={selectedData}
-            loading={selectedLoading}
-            onClose={() => setSelectedId(null)}
-            onEdit={(customer) => setEditCustomer(customer)}
-            onDelete={(customer) => setConfirmDelete(customer)}
-            onRestore={(customer) => setConfirmRestore(customer)}
-          />
-        )}
-      </AnimatePresence>
+      <div ref={detailsRef}>
+        <AnimatePresence>
+          {selectedId && (
+            <CustomerDetailPanel
+              key={selectedId}
+              data={selectedData}
+              loading={selectedLoading}
+              onClose={() => setSelectedId(null)}
+              onEdit={(customer) => setEditCustomer(customer)}
+              onDelete={(customer) => setConfirmDelete(customer)}
+              onRestore={(customer) => setConfirmRestore(customer)}
+            />
+          )}
+        </AnimatePresence>
+      </div>
 
       <Modal
         open={openAdd}
@@ -868,13 +768,7 @@ function CustomersPage() {
         icon={UserPlus}
         size="md"
       >
-        <CustomerForm
-          onSubmit={handleCreate}
-          loading={busy}
-          onCancel={() => setOpenAdd(false)}
-          allowedTypes={allowedCustomerTypes}
-          permissionsLoading={permissionsLoading}
-        />
+        <CustomerForm onSubmit={handleCreate} loading={busy} onCancel={() => setOpenAdd(false)} />
       </Modal>
 
       <Modal
@@ -891,8 +785,6 @@ function CustomersPage() {
             onSubmit={(payload) => handleUpdate(editCustomer.id, payload)}
             loading={busy}
             onCancel={() => setEditCustomer(null)}
-            allowedTypes={CUSTOMER_CREATE_TYPES}
-            permissionsLoading={false}
           />
         )}
       </Modal>
@@ -902,7 +794,7 @@ function CustomersPage() {
         onClose={() => !busy && setConfirmDelete(null)}
         onConfirm={handleDelete}
         title="حذف العميل"
-        description={`سيتم نقل العميل "${confirmDelete?.name || ""}" إلى الأرشيف ويمكن استعادته لاحقًا.`}
+        description={`سيتم نقل "${confirmDelete?.name || ""}" إلى الأرشيف ويمكن استعادته لاحقًا.`}
         confirmText="حذف"
         loading={busy}
         variant="danger"
@@ -913,7 +805,7 @@ function CustomersPage() {
         onClose={() => !busy && setConfirmRestore(null)}
         onConfirm={handleRestore}
         title="استعادة العميل"
-        description={`هل تريد استعادة العميل "${confirmRestore?.name || ""}" من الأرشيف؟`}
+        description={`هل تريد استعادة "${confirmRestore?.name || ""}" من الأرشيف؟`}
         confirmText="استعادة"
         loading={busy}
         variant="success"
@@ -924,7 +816,7 @@ function CustomersPage() {
         onClose={() => !busy && setConfirmForce(null)}
         onConfirm={handleForceDelete}
         title="حذف نهائي"
-        description={`سيتم حذف العميل "${confirmForce?.name || ""}" نهائيًا ولا يمكن التراجع.`}
+        description={`سيتم حذف "${confirmForce?.name || ""}" نهائيًا ولا يمكن التراجع.`}
         confirmText="حذف نهائي"
         loading={busy}
         variant="danger"
@@ -1019,12 +911,7 @@ function FilterDropdown({ value, options, onChange }) {
             : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
         ].join(" ")}
       >
-        <ChevronDown
-          className={[
-            "h-4 w-4 text-slate-400 transition",
-            open ? "rotate-180 text-slate-700" : "",
-          ].join(" ")}
-        />
+        <ChevronDown className={["h-4 w-4 text-slate-400 transition", open ? "rotate-180 text-slate-700" : ""].join(" ")} />
         <span>{label}</span>
       </button>
 
@@ -1050,16 +937,10 @@ function FilterDropdown({ value, options, onChange }) {
                   }}
                   className={[
                     "flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition",
-                    active
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:bg-slate-100",
+                    active ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100",
                   ].join(" ")}
                 >
-                  {active ? (
-                    <Check className="h-3.5 w-3.5 text-white" />
-                  ) : (
-                    <span className="h-3.5 w-3.5" />
-                  )}
+                  {active ? <Check className="h-3.5 w-3.5 text-white" /> : <span className="h-3.5 w-3.5" />}
                   <span>{option.label}</span>
                 </button>
               );
@@ -1100,12 +981,10 @@ function DefaultAvatar({ customer, size = "md" }) {
 
 function IconBtn({ icon: Icon, onClick, color = "slate", disabled }) {
   const palette = {
-    slate:
-      "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+    slate: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900",
     teal: "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100",
     rose: "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100",
-    emerald:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
   };
 
   return (
@@ -1119,6 +998,7 @@ function IconBtn({ icon: Icon, onClick, color = "slate", disabled }) {
     </button>
   );
 }
+
 function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onRestore }) {
   const transactions = data?.transactions || [];
 
@@ -1143,7 +1023,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
       <div className="ep-card-static min-w-0 overflow-hidden p-6">
         <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
-          جارٍ تحميل تفاصيل العميل...
+          جارٍ تحميل التفاصيل...
         </div>
       </div>
     );
@@ -1152,7 +1032,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
   if (!data?.customer) return null;
 
   const customer = data.customer;
-  const categoryMeta = getCategoryMeta(customer.category);
+  const typeMeta = getTypeMeta(customer.type);
 
   return (
     <ScrollReveal>
@@ -1160,9 +1040,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
         <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-[1.1fr_1fr_1.2fr]">
           <section className="order-3 xl:order-1">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400">
-                {transactions.length} حركة
-              </span>
+              <span className="text-[11px] font-bold text-slate-400">{transactions.length} حركة</span>
               <h4 className="text-sm font-black text-slate-900">آخر النشاطات</h4>
             </div>
 
@@ -1170,9 +1048,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
               <div className="flex min-w-0 overflow-hidden min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
                 <ArrowRightLeft className="mb-2 h-6 w-6 text-slate-400" />
                 <p className="text-xs font-black text-slate-700">لا توجد معاملات</p>
-                <p className="mt-1 text-[10px] text-slate-400">
-                  لم يتم تسجيل حركات لهذا العميل بعد
-                </p>
+                <p className="mt-1 text-[10px] text-slate-400">لم يتم تسجيل حركات بعد</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1187,24 +1063,15 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
                     >
                       <span
                         dir="ltr"
-                        className={
-                          sign === "-"
-                            ? "text-xs font-black text-rose-600"
-                            : "text-xs font-black text-emerald-600"
-                        }
+                        className={sign === "-" ? "text-xs font-black text-rose-600" : "text-xs font-black text-emerald-600"}
                       >
                         {sign}
-                        {formatMoney(transaction.amount)}{" "}
-                        {transaction.currency_code || "USD"}
+                        {formatMoney(transaction.amount)} {transaction.currency_code || "USD"}
                       </span>
 
                       <div className="text-right">
-                        <p className="text-xs font-black text-slate-900">
-                          {type.label}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          {formatRelative(transaction.created_at)}
-                        </p>
+                        <p className="text-xs font-black text-slate-900">{type.label}</p>
+                        <p className="text-[10px] text-slate-400">{formatRelative(transaction.created_at)}</p>
                       </div>
                     </div>
                   );
@@ -1214,35 +1081,13 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
           </section>
 
           <section className="order-2 xl:order-2">
-            <h4 className="mb-3 text-sm font-black text-slate-900">
-              تفاصيل العميل
-            </h4>
+            <h4 className="mb-3 text-sm font-black text-slate-900">تفاصيل الحساب</h4>
 
             <div className="grid grid-cols-2 gap-2">
-              <MiniStat
-                label="عدد المعاملات"
-                value={transactions.length}
-                icon={ArrowRightLeft}
-                color="violet"
-              />
-              <MiniStat
-                label="إجمالي السحوبات"
-                value={formatMoney(totalOut)}
-                icon={ArrowUpRight}
-                color="rose"
-              />
-              <MiniStat
-                label="إجمالي الإيداعات"
-                value={formatMoney(totalIn)}
-                icon={ArrowDownLeft}
-                color="emerald"
-              />
-              <MiniStat
-                label="الرصيد الحالي"
-                value={`${formatMoney(data.balance || 0)} USD`}
-                icon={Wallet}
-                color="teal"
-              />
+              <MiniStat label="عدد المعاملات" value={transactions.length} icon={ArrowRightLeft} color="violet" />
+              <MiniStat label="إجمالي السحوبات" value={formatMoney(totalOut)} icon={ArrowUpRight} color="rose" />
+              <MiniStat label="إجمالي الإيداعات" value={formatMoney(totalIn)} icon={ArrowDownLeft} color="emerald" />
+              <MiniStat label="الرصيد الحالي" value={`${formatMoney(data.balance || 0)} USD`} icon={Wallet} color="teal" />
             </div>
           </section>
 
@@ -1252,24 +1097,16 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
                 {!customer.deleted_at ? (
                   <>
                     <IconBtn icon={Edit3} onClick={() => onEdit(customer)} />
-                    <IconBtn
-                      icon={Trash2}
-                      onClick={() => onDelete(customer)}
-                      color="rose"
-                    />
+                    <IconBtn icon={Trash2} onClick={() => onDelete(customer)} color="rose" />
                   </>
                 ) : (
-                  <IconBtn
-                    icon={RotateCcw}
-                    onClick={() => onRestore(customer)}
-                    color="emerald"
-                  />
+                  <IconBtn icon={RotateCcw} onClick={() => onRestore(customer)} color="emerald" />
                 )}
 
                 <IconBtn icon={X} onClick={onClose} />
               </div>
 
-              <h4 className="text-sm font-black text-slate-900">بيانات العميل</h4>
+              <h4 className="text-sm font-black text-slate-900">بيانات الحساب</h4>
             </div>
 
             <div className="mt-4 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
@@ -1277,12 +1114,10 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
                 <DefaultAvatar customer={customer} size="lg" />
 
                 <div className="min-w-0 flex-1 text-right">
-                  <p className="text-xl font-black text-slate-900">
-                    {customer.name}
-                  </p>
+                  <p className="text-xl font-black text-slate-900">{customer.name}</p>
 
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge color={categoryMeta.color}>{categoryMeta.label}</Badge>
+                    <Badge color={typeMeta.color}>{typeMeta.label}</Badge>
 
                     {customer.deleted_at ? (
                       <Badge color="rose" dot>
@@ -1300,29 +1135,16 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
                   </div>
 
                   <p className="mt-3 font-mono text-[12px] text-slate-500" dir="ltr">
-                    {customer.phone || "—"}
+                    {customer.customer_code || "—"}
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <ProfileTile label="المدينة" value={customer.country} icon={MapPin} />
-              <ProfileTile
-                label="نوع العميل"
-                value={categoryMeta.label}
-                icon={categoryMeta.icon}
-              />
-              <ProfileTile
-                label="تاريخ التسجيل"
-                value={formatDate(customer.created_at)}
-                icon={CalendarDays}
-              />
-              <ProfileTile
-                label="رقم العميل"
-                value={`#${customer.id}`}
-                icon={MoreHorizontal}
-              />
+              <ProfileTile label="التصنيف" value={typeMeta.label} icon={typeMeta.icon} />
+              <ProfileTile label="تاريخ التسجيل" value={formatDate(customer.created_at)} icon={CalendarDays} />
+              <ProfileTile label="كود العميل" value={customer.customer_code || `#${customer.id}`} icon={MoreHorizontal} />
             </div>
           </section>
         </div>
@@ -1342,9 +1164,7 @@ function MiniStat({ label, value, icon: Icon, color = "teal" }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 text-right">
       <div className="flex items-center justify-between gap-2">
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg border ${palette[color]}`}
-        >
+        <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${palette[color]}`}>
           <Icon className="h-4 w-4" />
         </div>
         <p className="text-[10px] font-bold text-slate-500">{label}</p>
@@ -1359,9 +1179,7 @@ function ProfileTile({ label, value, icon: Icon }) {
     <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2">
       <div className="text-right">
         <p className="text-[10px] font-bold text-slate-500">{label}</p>
-        <p className="mt-0.5 truncate text-xs font-black text-slate-900">
-          {value || "—"}
-        </p>
+        <p className="mt-0.5 truncate text-xs font-black text-slate-900">{value || "—"}</p>
       </div>
 
       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-500">
@@ -1381,222 +1199,84 @@ function TableSkeleton() {
   );
 }
 
-function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUSTOMER_CREATE_TYPES, permissionsLoading = false }) {
-  const [selectedType, setSelectedType] = useState(initial?.category || null);
+function CustomerForm({ initial, onSubmit, loading, onCancel }) {
   const [form, setForm] = useState({
+    customer_code: initial?.customer_code || "",
     name: initial?.name || "",
-    phone: initial?.phone || "",
-    country: initial?.country || "",
+    type: initial?.type || "customer",
     balance_usd: initial?.balance_usd || "",
-    credit_limit: initial?.credit_limit || "",
-    commercial_record: initial?.commercial_record || "",
-    tax_number: initial?.tax_number || "",
     note: initial?.note || "",
     is_active: initial?.is_active !== false,
   });
 
-  const selectedMeta = CUSTOMER_CREATE_TYPES.find((type) => type.value === selectedType);
-  const SelectedTypeIcon = selectedMeta?.icon || UserRoundCheck;
-
   function handleSubmit(e) {
     e.preventDefault();
-    if (!selectedType) return;
 
     const payload = {
-      ...form,
+      customer_code: form.customer_code.trim(),
       name: form.name.trim(),
-      category: selectedType,
+      type: form.type,
+      note: form.note.trim(),
+      category: form.type === "supplier" ? "supplier" : "regular",
+      balance_usd: form.balance_usd === "" ? 0 : Number(form.balance_usd),
+      is_active: form.is_active,
     };
-    if (!payload.phone) delete payload.phone;
-    if (!payload.country) delete payload.country;
+
     if (!payload.note) delete payload.note;
-    if (payload.balance_usd === "") delete payload.balance_usd;
-    if (payload.credit_limit === "") delete payload.credit_limit;
-    if (!payload.commercial_record) delete payload.commercial_record;
-    if (!payload.tax_number) delete payload.tax_number;
-
-    if (selectedType !== "company") {
-      delete payload.commercial_record;
-      delete payload.tax_number;
-    }
-
-    if (selectedType !== "vip") {
-      delete payload.credit_limit;
-    }
 
     onSubmit(payload);
   }
 
-  if (!initial && !selectedType) {
-    return (
-      <div className="space-y-4" dir="rtl">
-        <div className="text-right">
-          <h3 className="text-sm font-black text-slate-900">اختر نوع العميل</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            سيتم فتح الحقول المتاحة بناءً على نوع العميل وصلاحيات المستخدم.
-          </p>
-        </div>
-
-        {permissionsLoading ? (
-          <div className="flex min-w-0 overflow-hidden items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-xs font-bold text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            جارٍ تحميل الصلاحيات...
-          </div>
-        ) : allowedTypes.length === 0 ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-right">
-            <p className="text-sm font-black text-rose-700">لا تملك صلاحية إضافة عميل</p>
-            <p className="mt-1 text-xs text-rose-500">
-              يجب ربط دور المستخدم بصلاحية إضافة عميل من صفحة الأدوار والصلاحيات.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {allowedTypes.map((type) => {
-              const Icon = type.icon;
-              const palette = {
-                teal: "border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-300 hover:bg-teal-100",
-                violet: "border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100",
-                amber: "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100",
-              };
-
-              return (
-                <button
-                  key={type.value}
-                  type="button"
-                  onClick={() => setSelectedType(type.value)}
-                  className={`rounded-2xl border p-4 text-right transition hover:-translate-y-0.5 ${palette[type.color] || palette.teal}`}
-                >
-                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/70">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <p className="text-sm font-black">{type.label}</p>
-                  <p className="mt-1 text-[11px] leading-5 opacity-80">{type.description}</p>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <button type="button" onClick={onCancel} className="ep-btn ep-btn-ghost">
-            إلغاء
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
-      {!initial && selectedMeta && (
-        <div className="flex min-w-0 overflow-hidden items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
-          <button
-            type="button"
-            onClick={() => setSelectedType(null)}
-            disabled={loading}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
-          >
-            تغيير النوع
-          </button>
-
-          <div className="flex items-center gap-3 text-right">
-            <div>
-              <p className="text-xs font-bold text-slate-500">نوع العميل</p>
-              <p className="text-sm font-black text-slate-900">{selectedMeta.label}</p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 text-teal-700">
-              <SelectedTypeIcon className="h-5 w-5" />
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={selectedType === "company" ? "اسم الشركة" : "الاسم"}>
+        <Field label="الاسم">
           <input
             required
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             className="ep-input"
-            placeholder={selectedType === "company" ? "اسم الشركة" : "اسم العميل"}
+            placeholder="اسم العميل"
             disabled={loading}
           />
         </Field>
 
-        <Field label="رقم الهاتف">
+        <Field label="كود العميل">
           <input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            required
+            value={form.customer_code}
+            onChange={(e) => setForm({ ...form, customer_code: e.target.value })}
             className="ep-input"
-            placeholder="+970..."
+            placeholder="335"
             dir="ltr"
             disabled={loading}
           />
         </Field>
 
-        <Field label="المدينة">
+        <Field label="التصنيف">
+          <select
+            value={form.type}
+            onChange={(e) => setForm({ ...form, type: e.target.value })}
+            className="ep-input appearance-none"
+            disabled={loading}
+          >
+            <option value="customer">عميل</option>
+            <option value="supplier">مورد</option>
+          </select>
+        </Field>
+
+        <Field label="الرصيد الابتدائي">
           <input
-            value={form.country}
-            onChange={(e) => setForm({ ...form, country: e.target.value })}
+            type="number"
+            step="0.01"
+            value={form.balance_usd}
+            onChange={(e) => setForm({ ...form, balance_usd: e.target.value })}
             className="ep-input"
-            placeholder="المدينة"
+            placeholder="0.00"
+            dir="ltr"
             disabled={loading}
           />
         </Field>
-
-        {selectedType === "company" && (
-          <>
-            <Field label="السجل التجاري">
-              <input
-                value={form.commercial_record}
-                onChange={(e) => setForm({ ...form, commercial_record: e.target.value })}
-                className="ep-input"
-                placeholder="رقم السجل التجاري"
-                disabled={loading}
-              />
-            </Field>
-
-            <Field label="الرقم الضريبي">
-              <input
-                value={form.tax_number}
-                onChange={(e) => setForm({ ...form, tax_number: e.target.value })}
-                className="ep-input"
-                placeholder="الرقم الضريبي"
-                disabled={loading}
-              />
-            </Field>
-          </>
-        )}
-
-        {selectedType === "vip" && (
-          <>
-            <Field label="الرصيد الابتدائي">
-              <input
-                type="number"
-                step="0.01"
-                value={form.balance_usd}
-                onChange={(e) => setForm({ ...form, balance_usd: e.target.value })}
-                className="ep-input"
-                placeholder="0.00"
-                dir="ltr"
-                disabled={loading}
-              />
-            </Field>
-
-            <Field label="حد العميل">
-              <input
-                type="number"
-                step="0.01"
-                value={form.credit_limit}
-                onChange={(e) => setForm({ ...form, credit_limit: e.target.value })}
-                className="ep-input"
-                placeholder="0.00"
-                dir="ltr"
-                disabled={loading}
-              />
-            </Field>
-          </>
-        )}
 
         <Field label="الحالة">
           <select
@@ -1643,9 +1323,7 @@ function CustomerForm({ initial, onSubmit, loading, onCancel, allowedTypes = CUS
 function Field({ label, children }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-bold text-slate-700">
-        {label}
-      </span>
+      <span className="mb-1.5 block text-xs font-bold text-slate-700">{label}</span>
       {children}
     </label>
   );
