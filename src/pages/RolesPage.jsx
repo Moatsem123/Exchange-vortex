@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck,
@@ -21,6 +21,7 @@ import Modal from "../shared/Modal";
 import ConfirmDialog from "../shared/ConfirmDialog";
 import ScrollReveal from "../shared/ScrollReveal";
 import { useToast } from "../shared/Toast";
+import { useAuth } from "../context/AuthContext";
 import { extractApiError } from "../shared/helpers";
 import usersPermissionsService from "../services/usersPermissions";
 import {
@@ -31,8 +32,6 @@ import {
   permissionKey,
   getRoleLabel,
   getPermissionAction,
-  getPermissionModule,
-  getPermissionModuleLabel,
   groupPermissions,
 } from "./usersPermissionsHelpers";
 
@@ -40,13 +39,61 @@ function isOwnerRole(role) {
   return role?.name === "owner" || role?.key === "owner" || role?.slug === "owner";
 }
 
+function isProtectedRole(role) {
+  const name = String(role?.name || role?.key || role?.slug || "").toLowerCase();
+  return name === "owner" || name === "admin";
+}
+
+function canCurrentUserDeleteRoles(user, roleKeys = []) {
+  const keys = new Set(
+    [
+      ...(Array.isArray(roleKeys) ? roleKeys : []),
+      typeof user?.role === "string" ? user.role : null,
+      user?.role?.name,
+      user?.role?.key,
+      user?.role?.slug,
+      user?.role?.code,
+      ...(Array.isArray(user?.roles)
+        ? user.roles.flatMap((role) => {
+            if (typeof role === "string") return [role];
+
+            return [role?.name, role?.key, role?.slug, role?.code];
+          })
+        : []),
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+  );
+
+  return (
+    user?.email === "owner@exchange.com" ||
+    user?.email === "admin@cleargate-fx.com" ||
+    keys.has("owner") ||
+    keys.has("admin")
+  );
+}
+
+function permissionObjectsFromKeys(keys = [], permissions = []) {
+  const map = new Map();
+
+  permissions.forEach((permission) => {
+    const key = permissionKey(permission);
+    if (key) map.set(key, permission);
+  });
+
+  return keys.filter(Boolean).map((key) => map.get(key) || { name: key });
+}
+
 export default function RolesPage() {
   const toast = useToast();
+  const { user, roleKeys } = useAuth();
+  const permissionsSaveTimerRef = useRef(null);
 
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [activeRoleId, setActiveRoleId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -64,42 +111,81 @@ export default function RolesPage() {
     return new Set(list.map(permissionKey).filter(Boolean));
   }, [activeRole]);
 
-  const groupedPermissions = useMemo(
-    () => groupPermissions(permissions),
-    [permissions]
-  );
+  const groupedPermissions = useMemo(() => groupPermissions(permissions), [permissions]);
 
-  const activeRoleIsOwner = isOwnerRole(activeRole);
+  const activeRoleIsProtected = isProtectedRole(activeRole);
+  const canDeleteRoles = canCurrentUserDeleteRoles(user, roleKeys);
+  const allPermissionsSelected = permissions.length > 0 && selectedPerms.size === permissions.length;
+  const noPermissionsSelected = selectedPerms.size === 0;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const [rolesRes, permsRes] = await Promise.all([
-        usersPermissionsService.roles.list(),
-        usersPermissionsService.permissions.list(),
-      ]);
-
-      const normalizedRoles = normalizeArray(rolesRes);
-      const normalizedPermissions = normalizePermissionsResponse(permsRes);
-
-      setRoles(normalizedRoles);
-      setPermissions(normalizedPermissions);
-
-      if (!activeRoleId && normalizedRoles[0]) {
-        setActiveRoleId(normalizedRoles[0].id);
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
       }
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeRoleId]);
+
+      setError(null);
+
+      try {
+        const [rolesRes, permsRes] = await Promise.all([
+          usersPermissionsService.roles.list(),
+          usersPermissionsService.permissions.list(),
+        ]);
+
+        const normalizedRoles = normalizeArray(rolesRes);
+        const normalizedPermissions = normalizePermissionsResponse(permsRes);
+
+        setRoles(normalizedRoles);
+        setPermissions(normalizedPermissions);
+
+        setActiveRoleId((current) => {
+          if (current && normalizedRoles.some((role) => String(role.id) === String(current))) {
+            return current;
+          }
+
+          return normalizedRoles[0]?.id || null;
+        });
+      } catch (err) {
+        if (!silent) {
+          setError(err);
+        } else {
+          toast.error(extractApiError(err));
+        }
+      } finally {
+        if (silent) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [toast]
+  );
 
   useEffect(() => {
     load();
+
+    return () => {
+      if (permissionsSaveTimerRef.current) {
+        clearTimeout(permissionsSaveTimerRef.current);
+      }
+    };
   }, [load]);
+
+  function updateRolePermissionsLocally(roleId, nextKeys) {
+    setRoles((current) =>
+      current.map((role) => {
+        if (String(role.id) !== String(roleId)) return role;
+
+        return {
+          ...role,
+          permissions: permissionObjectsFromKeys(nextKeys, permissions),
+        };
+      })
+    );
+  }
 
   async function handleCreate(payload) {
     setBusy(true);
@@ -108,7 +194,7 @@ export default function RolesPage() {
       await usersPermissionsService.roles.create(payload);
       toast.success("تم إنشاء الدور بنجاح");
       setOpenRoleForm(false);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(extractApiError(err));
     } finally {
@@ -119,14 +205,19 @@ export default function RolesPage() {
   async function handleUpdate(payload) {
     if (!editRole) return;
 
+    if (isProtectedRole(editRole)) {
+      setEditRole(null);
+      return;
+    }
+
     setBusy(true);
 
     try {
       await usersPermissionsService.roles.update(editRole.id, { name: payload.name });
       await usersPermissionsService.roles.assignPermissions(editRole.id, payload.permissions || []);
-      toast.success("تم تحديث الدور والصلاحيات");
+      updateRolePermissionsLocally(editRole.id, payload.permissions || []);
       setEditRole(null);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(extractApiError(err));
     } finally {
@@ -137,8 +228,14 @@ export default function RolesPage() {
   async function handleDelete() {
     if (!confirmDeleteRole) return;
 
-    if (isOwnerRole(confirmDeleteRole)) {
-      toast.error("لا يمكن حذف دور المالك");
+    if (!canDeleteRoles) {
+      toast.error("لا تملك صلاحية حذف الأدوار");
+      setConfirmDeleteRole(null);
+      return;
+    }
+
+    if (isProtectedRole(confirmDeleteRole) || isOwnerRole(confirmDeleteRole)) {
+      toast.error("لا يمكن حذف دور المالك أو الأدمن");
       setConfirmDeleteRole(null);
       return;
     }
@@ -147,10 +244,9 @@ export default function RolesPage() {
 
     try {
       await usersPermissionsService.roles.remove(confirmDeleteRole.id);
-      toast.success("تم حذف الدور");
       setConfirmDeleteRole(null);
       setActiveRoleId(null);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(extractApiError(err));
     } finally {
@@ -158,31 +254,85 @@ export default function RolesPage() {
     }
   }
 
-  async function handleTogglePermission(permission) {
-    if (!activeRole || busy) return;
+  function saveActiveRolePermissions(nextSet) {
+    if (!activeRole) return;
+    if (isProtectedRole(activeRole)) return;
+
+    const roleId = activeRole.id;
+    const nextKeys = Array.from(nextSet).filter(Boolean);
+
+    updateRolePermissionsLocally(roleId, nextKeys);
+
+    if (permissionsSaveTimerRef.current) {
+      clearTimeout(permissionsSaveTimerRef.current);
+    }
+
+    permissionsSaveTimerRef.current = setTimeout(async () => {
+      try {
+        await usersPermissionsService.roles.assignPermissions(roleId, nextKeys);
+      } catch (err) {
+        console.error("Failed to save role permissions", err);
+      }
+    }, 350);
+  }
+
+  function handleTogglePermission(permission) {
+    if (!activeRole) return;
+    if (isProtectedRole(activeRole)) return;
 
     const key = permissionKey(permission);
     if (!key) return;
-
-    setBusy(true);
 
     const next = new Set(selectedPerms);
 
     if (next.has(key)) next.delete(key);
     else next.add(key);
 
-    try {
-      await usersPermissionsService.roles.assignPermissions(
-        activeRole.id,
-        Array.from(next).filter(Boolean)
-      );
-      toast.success("تم تحديث صلاحيات الدور");
-      await load();
-    } catch (err) {
-      toast.error(extractApiError(err));
-    } finally {
-      setBusy(false);
-    }
+    saveActiveRolePermissions(next);
+  }
+
+  function handleSelectPermissionGroup(list = []) {
+    if (!activeRole) return;
+    if (isProtectedRole(activeRole)) return;
+
+    const next = new Set(selectedPerms);
+
+    list.forEach((permission) => {
+      const key = permissionKey(permission);
+      if (key) next.add(key);
+    });
+
+    saveActiveRolePermissions(next);
+  }
+
+  function handleClearPermissionGroup(list = []) {
+    if (!activeRole) return;
+    if (isProtectedRole(activeRole)) return;
+
+    const next = new Set(selectedPerms);
+
+    list.forEach((permission) => {
+      const key = permissionKey(permission);
+      if (key) next.delete(key);
+    });
+
+    saveActiveRolePermissions(next);
+  }
+
+  function handleSelectAllActivePermissions() {
+    if (!activeRole) return;
+    if (isProtectedRole(activeRole)) return;
+
+    const next = new Set(permissions.map(permissionKey).filter(Boolean));
+
+    saveActiveRolePermissions(next);
+  }
+
+  function handleClearAllActivePermissions() {
+    if (!activeRole) return;
+    if (isProtectedRole(activeRole)) return;
+
+    saveActiveRolePermissions(new Set());
   }
 
   return (
@@ -204,10 +354,10 @@ export default function RolesPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={load}
+            onClick={() => load({ silent: true })}
             className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm transition hover:bg-slate-50"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`} />
           </button>
 
           <button
@@ -223,13 +373,33 @@ export default function RolesPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard label="إجمالي الأدوار" value={roles.length} icon={ShieldCheck} color="violet" note="الأدوار المعرّفة" />
-        <StatCard label="إجمالي الصلاحيات" value={permissions.length} icon={KeyRound} color="teal" note="كل صلاحيات النظام" />
-        <StatCard label="صلاحيات الدور المحدد" value={selectedPerms.size} icon={LayoutGrid} color="amber" note={activeRole ? getRoleLabel(activeRole) : "—"} />
+        <StatCard
+          label="إجمالي الأدوار"
+          value={roles.length}
+          icon={ShieldCheck}
+          color="violet"
+          note="الأدوار المعرّفة"
+        />
+
+        <StatCard
+          label="إجمالي الصلاحيات"
+          value={permissions.length}
+          icon={KeyRound}
+          color="teal"
+          note="كل صلاحيات النظام"
+        />
+
+        <StatCard
+          label="صلاحيات الدور المحدد"
+          value={selectedPerms.size}
+          icon={LayoutGrid}
+          color="amber"
+          note={activeRole ? getRoleLabel(activeRole) : "—"}
+        />
       </div>
 
       {error && !loading ? (
-        <ErrorState title="تعذّر تحميل البيانات" description={extractApiError(error)} onRetry={load} />
+        <ErrorState title="تعذّر تحميل البيانات" description={extractApiError(error)} onRetry={() => load()} />
       ) : (
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[280px_1fr]">
           <ScrollReveal>
@@ -238,6 +408,7 @@ export default function RolesPage() {
                 <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-black text-slate-600">
                   {roles.length}
                 </span>
+
                 <h2 className="text-sm font-black text-slate-900">قائمة الأدوار</h2>
               </div>
 
@@ -268,13 +439,21 @@ export default function RolesPage() {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[10px] font-black transition ${isActive ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500"}`}>
+                          <span
+                            className={`shrink-0 rounded-lg px-2 py-0.5 text-[10px] font-black transition ${
+                              isActive ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
                             {permCount}
                           </span>
 
                           <div className="min-w-0">
                             <p className="truncate text-sm font-black">{getRoleLabel(role)}</p>
-                            <p className={`mt-0.5 truncate font-mono text-[10px] ${isActive ? "text-teal-200" : "text-slate-400"}`}>
+                            <p
+                              className={`mt-0.5 truncate font-mono text-[10px] ${
+                                isActive ? "text-teal-200" : "text-slate-400"
+                              }`}
+                            >
                               {role.name}
                             </p>
                           </div>
@@ -294,25 +473,53 @@ export default function RolesPage() {
               ) : (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setEditRole(activeRole)}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-100 active:scale-95"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                        تعديل الدور
-                      </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!activeRoleIsProtected && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setEditRole(activeRole)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-100 active:scale-95"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                            تعديل الدور
+                          </button>
 
-                      {!activeRoleIsOwner && (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteRole(activeRole)}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-100 active:scale-95"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          حذف
-                        </button>
+                          {canDeleteRoles && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteRole(activeRole)}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-100 active:scale-95"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              حذف
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={handleClearAllActivePermissions}
+                            disabled={noPermissionsSelected}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 text-xs font-black text-rose-500 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            إلغاء كل الصلاحيات
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleSelectAllActivePermissions}
+                            disabled={allPermissionsSelected}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-teal-200 bg-white px-3 text-xs font-black text-teal-600 transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            تحديد كل الصلاحيات
+                          </button>
+                        </>
+                      )}
+
+                      {activeRoleIsProtected && (
+                        <span className="inline-flex h-9 items-center rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-700">
+                          دور محمي للعرض فقط
+                        </span>
                       )}
                     </div>
 
@@ -321,6 +528,7 @@ export default function RolesPage() {
                         <Badge color={ROLE_COLORS[activeRole.name] || "teal"}>
                           {getRoleLabel(activeRole)}
                         </Badge>
+
                         <code className="rounded-lg bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-600">
                           {activeRole.name}
                         </code>
@@ -348,7 +556,9 @@ export default function RolesPage() {
                           permissions={list}
                           selected={selectedPerms}
                           onToggle={handleTogglePermission}
-                          busy={busy}
+                          onSelectGroup={() => handleSelectPermissionGroup(list)}
+                          onClearGroup={() => handleClearPermissionGroup(list)}
+                          readonly={activeRoleIsProtected}
                         />
                       ))
                     )}
@@ -438,7 +648,15 @@ function StatCard({ label, value, icon: Icon, color, note }) {
   );
 }
 
-function PermissionGroup({ moduleName, permissions, selected, onToggle, busy }) {
+function PermissionGroup({
+  moduleName,
+  permissions,
+  selected,
+  onToggle,
+  onSelectGroup,
+  onClearGroup,
+  readonly = false,
+}) {
   const [open, setOpen] = useState(true);
 
   const enabledCount = permissions.filter((p) => selected.has(permissionKey(p))).length;
@@ -449,27 +667,53 @@ function PermissionGroup({ moduleName, permissions, selected, onToggle, busy }) 
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 bg-slate-50/70 px-4 py-3 text-right transition hover:bg-slate-100"
-      >
-        <div className="flex items-center gap-2">
-          <motion.span animate={{ rotate: open ? 0 : -90 }} transition={{ duration: 0.15 }}>
-            <ChevronDown className="h-4 w-4 text-slate-400" />
-          </motion.span>
-          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 px-4 py-3">
+        {!readonly && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClearGroup}
+              disabled={noneEnabled}
+              className="rounded-lg px-2 py-1 text-[10px] font-black text-rose-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              إلغاء القسم
+            </button>
 
-        <div>
-          <p className="text-sm font-black text-slate-800">
-            {permissions[0]?.group_label || MODULE_LABELS[moduleName] || moduleName}
-          </p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-400">
-            {enabledCount} / {permissions.length} مُفعّل
-          </p>
-        </div>
-      </button>
+            <button
+              type="button"
+              onClick={onSelectGroup}
+              disabled={allEnabled}
+              className="rounded-lg px-2 py-1 text-[10px] font-black text-teal-600 transition hover:bg-teal-50 hover:text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              تحديد القسم
+            </button>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex flex-1 items-center justify-between gap-3 text-right transition"
+        >
+          <div className="flex items-center gap-2">
+            <motion.span animate={{ rotate: open ? 0 : -90 }} transition={{ duration: 0.15 }}>
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            </motion.span>
+
+            <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+          </div>
+
+          <div>
+            <p className="text-sm font-black text-slate-800">
+              {permissions[0]?.group_label || MODULE_LABELS[moduleName] || moduleName}
+            </p>
+
+            <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+              {enabledCount} / {permissions.length} مُفعّل
+            </p>
+          </div>
+        </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {open && (
@@ -489,22 +733,34 @@ function PermissionGroup({ moduleName, permissions, selected, onToggle, busy }) 
                   <button
                     key={key}
                     type="button"
-                    disabled={busy}
-                    onClick={() => onToggle(permission)}
-                    className={`group flex min-h-[74px] items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-right transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
+                    onClick={() => {
+                      if (!readonly) onToggle(permission);
+                    }}
+                    className={`group flex min-h-[74px] items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-right transition-all duration-200 ${
+                      readonly ? "cursor-default" : ""
+                    } ${
                       active
                         ? "border-emerald-200 bg-emerald-50 shadow-sm"
                         : "border-slate-200 bg-white hover:border-teal-200 hover:bg-teal-50/40"
                     }`}
                   >
-                    <div className={`relative h-7 w-14 shrink-0 rounded-full transition-all duration-200 ${active ? "bg-emerald-500" : "bg-slate-300"}`}>
-                      <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${active ? "right-1" : "right-8"}`} />
+                    <div
+                      className={`relative h-7 w-14 shrink-0 rounded-full transition-all duration-200 ${
+                        active ? "bg-emerald-500" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${
+                          active ? "right-1" : "right-8"
+                        }`}
+                      />
                     </div>
 
                     <div className="min-w-0">
                       <p className="truncate text-xs font-black text-slate-800">
                         {permission.label || getPermissionAction(permission)}
                       </p>
+
                       <p className="mt-1 truncate font-mono text-[10px] text-slate-400" dir="ltr">
                         {key}
                       </p>
@@ -526,10 +782,7 @@ function RoleForm({ initial, permissions, loading, onCancel, onSubmit }) {
     new Set((initial?.permissions || []).map(permissionKey).filter(Boolean))
   );
 
-  const grouped = useMemo(
-    () => groupPermissions(permissions),
-    [permissions]
-  );
+  const grouped = useMemo(() => groupPermissions(permissions), [permissions]);
 
   function togglePerm(permission) {
     const key = permissionKey(permission);
@@ -537,8 +790,10 @@ function RoleForm({ initial, permissions, loading, onCancel, onSubmit }) {
 
     setSelected((prev) => {
       const next = new Set(prev);
+
       if (next.has(key)) next.delete(key);
       else next.add(key);
+
       return next;
     });
   }
@@ -549,6 +804,32 @@ function RoleForm({ initial, permissions, loading, onCancel, onSubmit }) {
 
   function clearAll() {
     setSelected(new Set());
+  }
+
+  function selectGroup(list = []) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+
+      list.forEach((permission) => {
+        const key = permissionKey(permission);
+        if (key) next.add(key);
+      });
+
+      return next;
+    });
+  }
+
+  function clearGroup(list = []) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+
+      list.forEach((permission) => {
+        const key = permissionKey(permission);
+        if (key) next.delete(key);
+      });
+
+      return next;
+    });
   }
 
   function submit(e) {
@@ -581,11 +862,21 @@ function RoleForm({ initial, permissions, loading, onCancel, onSubmit }) {
       <div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <button type="button" onClick={clearAll} className="text-[11px] font-bold text-rose-500 transition hover:text-rose-700">
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={loading}
+              className="text-[11px] font-bold text-rose-500 transition hover:text-rose-700 disabled:opacity-50"
+            >
               إلغاء الكل
             </button>
 
-            <button type="button" onClick={selectAll} className="text-[11px] font-bold text-teal-600 transition hover:text-teal-800">
+            <button
+              type="button"
+              onClick={selectAll}
+              disabled={loading}
+              className="text-[11px] font-bold text-teal-600 transition hover:text-teal-800 disabled:opacity-50"
+            >
               تحديد الكل
             </button>
           </div>
@@ -606,17 +897,42 @@ function RoleForm({ initial, permissions, loading, onCancel, onSubmit }) {
 
             return (
               <div key={mod} className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full transition ${allOn ? "bg-emerald-500" : someOn ? "bg-amber-400" : "bg-slate-300"}`} />
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full transition ${
+                        allOn ? "bg-emerald-500" : someOn ? "bg-amber-400" : "bg-slate-300"
+                      }`}
+                    />
+
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
                       {enabledCount}/{list.length}
                     </span>
                   </div>
 
-                  <p className="text-xs font-black text-slate-700">
-                    {list[0]?.group_label || MODULE_LABELS[mod] || mod}
-                  </p>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => clearGroup(list)}
+                      disabled={loading || enabledCount === 0}
+                      className="rounded-lg px-2 py-1 text-[10px] font-black text-rose-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      إلغاء صلاحيات القسم
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => selectGroup(list)}
+                      disabled={loading || allOn}
+                      className="rounded-lg px-2 py-1 text-[10px] font-black text-teal-600 transition hover:bg-teal-50 hover:text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      تحديد صلاحيات القسم
+                    </button>
+
+                    <p className="text-xs font-black text-slate-700">
+                      {list[0]?.group_label || MODULE_LABELS[mod] || mod}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -636,14 +952,23 @@ function RoleForm({ initial, permissions, loading, onCancel, onSubmit }) {
                             : "border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:bg-teal-50/40"
                         }`}
                       >
-                        <div className={`relative h-6 w-11 shrink-0 rounded-full transition-all duration-200 ${active ? "bg-emerald-500" : "bg-slate-300"}`}>
-                          <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all duration-200 ${active ? "right-1" : "right-6"}`} />
+                        <div
+                          className={`relative h-6 w-11 shrink-0 rounded-full transition-all duration-200 ${
+                            active ? "bg-emerald-500" : "bg-slate-300"
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all duration-200 ${
+                              active ? "right-1" : "right-6"
+                            }`}
+                          />
                         </div>
 
                         <div className="min-w-0">
                           <p className="truncate text-xs font-black">
                             {permission.label || getPermissionAction(permission)}
                           </p>
+
                           <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400" dir="ltr">
                             {key}
                           </p>

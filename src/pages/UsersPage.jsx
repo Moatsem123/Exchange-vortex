@@ -44,12 +44,21 @@ import {
 
 const PER_PAGE = 10;
 
-function isOwnerUser(user) {
+function isProtectedSystemUser(user) {
+  const roleName = getRoleName(user);
+  const roles = Array.isArray(user?.roles) ? user.roles : [];
+
   return (
     user?.is_owner === true ||
+    user?.is_admin === true ||
     user?.email === "owner@exchange.com" ||
-    getRoleName(user) === "owner" ||
-    user?.roles?.some?.((role) => role?.name === "owner" || role === "owner")
+    user?.email === "admin@cleargate-fx.com" ||
+    roleName === "owner" ||
+    roleName === "admin" ||
+    roles.some((role) => {
+      const name = typeof role === "string" ? role : role?.name;
+      return name === "owner" || name === "admin";
+    })
   );
 }
 
@@ -184,6 +193,11 @@ export default function UsersPage() {
   }
 
   async function handleToggle(user) {
+    if (isProtectedSystemUser(user)) {
+      toast.error("لا يمكن تعطيل حساب المالك أو الأدمن");
+      return;
+    }
+
     setBusy(true);
 
     try {
@@ -200,8 +214,8 @@ export default function UsersPage() {
   async function handleDelete() {
     if (!confirmDeleteUser) return;
 
-    if (isOwnerUser(confirmDeleteUser)) {
-      toast.error("لا يمكن حذف حساب المالك");
+    if (isProtectedSystemUser(confirmDeleteUser)) {
+      toast.error("لا يمكن حذف حساب المالك أو الأدمن");
       setConfirmDeleteUser(null);
       return;
     }
@@ -540,7 +554,7 @@ function UserRow({ user, index, busy, onView, onEdit, onVault, onToggle, onResto
   const isDeleted = !!user.deleted_at;
   const isActive = user.is_active !== false && !isDeleted;
   const balance = user.initial_balance ?? user.vault?.balance_usd ?? user.vault?.initial_balance ?? 0;
-  const isOwner = isOwnerUser(user);
+  const isProtected = isProtectedSystemUser(user);
 
   return (
     <motion.tr
@@ -604,17 +618,20 @@ function UserRow({ user, index, busy, onView, onEdit, onVault, onToggle, onResto
             <>
               <ActionBtn icon={Edit3} onClick={onEdit} color="slate" title="تعديل" disabled={busy} />
               <ActionBtn icon={Banknote} onClick={onVault} color="amber" title="رصيد الصندوق" disabled={busy} />
-              <ActionBtn
-                icon={Power}
-                onClick={onToggle}
-                color={isActive ? "rose" : "emerald"}
-                title={isActive ? "تعطيل" : "تفعيل"}
-                disabled={busy}
-              />
+
+              {!isProtected && (
+                <ActionBtn
+                  icon={Power}
+                  onClick={onToggle}
+                  color={isActive ? "rose" : "emerald"}
+                  title={isActive ? "تعطيل" : "تفعيل"}
+                  disabled={busy}
+                />
+              )}
             </>
           )}
 
-          {!isOwner && (
+          {!isProtected && (
             <ActionBtn icon={Trash2} onClick={onDelete} color="rose" title="حذف" disabled={busy} />
           )}
         </div>

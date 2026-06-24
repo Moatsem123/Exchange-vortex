@@ -22,8 +22,13 @@ export function formatMoney(value, options = {}) {
 }
 
 export function formatNumber(value, locale = "en-US") {
-  return new Intl.NumberFormat(locale).format(Number(value || 0));
+  const num = Number(value || 0);
+
+  if (!Number.isFinite(num)) return "0";
+
+  return new Intl.NumberFormat(locale).format(num);
 }
+
 export function formatCompactNumber(value, options = {}) {
   const { maxDecimals = 2, locale = "en-US" } = options;
   const number = Number(value || 0);
@@ -45,6 +50,7 @@ export function formatCompactNumber(value, options = {}) {
     maximumFractionDigits: 2,
   }).format(number);
 }
+
 export function formatDate(iso, options = {}) {
   if (!iso) return "—";
 
@@ -52,6 +58,8 @@ export function formatDate(iso, options = {}) {
 
   try {
     const d = new Date(iso);
+
+    if (Number.isNaN(d.getTime())) return "—";
 
     if (withTime) {
       return d.toLocaleString(locale, {
@@ -78,6 +86,9 @@ export function formatRelative(iso) {
 
   try {
     const d = new Date(iso);
+
+    if (Number.isNaN(d.getTime())) return "—";
+
     const diff = (Date.now() - d.getTime()) / 1000;
 
     if (diff < 60) return "الآن";
@@ -141,9 +152,16 @@ export function extractApiError(err, fallback = "حدث خطأ غير متوقع
   if (err?.response?.status === 422) {
     const errors = err.response.data?.errors;
 
-    if (errors) {
+    if (errors && typeof errors === "object") {
       const first = Object.values(errors)[0];
-      if (Array.isArray(first)) return first[0];
+
+      if (Array.isArray(first) && first[0]) {
+        return first[0];
+      }
+
+      if (typeof first === "string") {
+        return first;
+      }
     }
 
     return err.response.data?.message || "بيانات غير صالحة";
@@ -170,15 +188,43 @@ export function extractApiError(err, fallback = "حدث خطأ غير متوقع
   return fallback;
 }
 
+export function getApiValidationErrors(err) {
+  const errors = err?.response?.data?.errors;
+
+  if (!errors || typeof errors !== "object") return null;
+
+  const mapped = {};
+
+  Object.keys(errors).forEach((key) => {
+    const value = errors[key];
+
+    mapped[key] = Array.isArray(value) ? value[0] : value;
+  });
+
+  return mapped;
+}
+
 export function unwrap(res) {
   if (res?.data !== undefined) return res.data;
   return res;
 }
 
 export function unwrapList(res) {
-  if (Array.isArray(res)) return { items: res, meta: null };
-  if (Array.isArray(res?.data)) return { items: res.data, meta: res.meta || null };
-  if (Array.isArray(res?.data?.data)) return { items: res.data.data, meta: res.data.meta || res.meta };
+  if (Array.isArray(res)) {
+    return { items: res, meta: null };
+  }
+
+  if (Array.isArray(res?.data)) {
+    return { items: res.data, meta: res.meta || null };
+  }
+
+  if (Array.isArray(res?.data?.data)) {
+    return { items: res.data.data, meta: res.data.meta || res.meta || null };
+  }
+
+  if (Array.isArray(res?.items)) {
+    return { items: res.items, meta: res.meta || null };
+  }
 
   return { items: [], meta: null };
 }

@@ -98,8 +98,10 @@ function normalizePermissions(res) {
 
 function isThisMonth(date) {
   if (!date) return false;
+
   const d = new Date(date);
   const now = new Date();
+
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
 }
 
@@ -126,11 +128,117 @@ function getCustomerBalance(customer, balancesMap) {
 
   if (customer?.balance_usd !== undefined) return Number(customer.balance_usd) || 0;
   if (customer?.current_balance !== undefined) return Number(customer.current_balance) || 0;
+
   if (typeof customer?.balance === "number" || typeof customer?.balance === "string") {
     return Number(customer.balance) || 0;
   }
 
   return 0;
+}
+
+function friendlyCustomerFieldError(field, message) {
+  const text = String(message || "").toLowerCase();
+
+  if (field === "customer_code") {
+    if (
+      text.includes("مستخدمة") ||
+      text.includes("موجود") ||
+      text.includes("taken") ||
+      text.includes("unique") ||
+      text.includes("already")
+    ) {
+      return "هذا الكود موجود مسبقًا";
+    }
+
+    if (text.includes("required") || text.includes("مطلوب") || text.includes("فارغ")) {
+      return "الرجاء إدخال كود العميل";
+    }
+
+    return "تحقق من كود العميل";
+  }
+
+  if (field === "name") {
+    if (
+      text.includes("مستخدمة") ||
+      text.includes("موجود") ||
+      text.includes("taken") ||
+      text.includes("unique") ||
+      text.includes("already")
+    ) {
+      return "هذا الاسم موجود مسبقًا، الرجاء تغييره";
+    }
+
+    if (text.includes("required") || text.includes("مطلوب") || text.includes("فارغ")) {
+      return "الرجاء إدخال اسم العميل";
+    }
+
+    return "تحقق من اسم العميل";
+  }
+
+  if (field === "type") {
+    return "الرجاء اختيار التصنيف";
+  }
+
+  if (field === "category") {
+    return "تصنيف العميل غير صحيح";
+  }
+
+  if (field === "balance_usd") {
+    return "الرصيد الابتدائي غير صحيح";
+  }
+
+  if (field === "is_active") {
+    return "حالة العميل غير صحيحة";
+  }
+
+  if (field === "note") {
+    return "تحقق من الملاحظات";
+  }
+
+  return message || "القيمة غير صحيحة";
+}
+
+function mapCustomerValidationErrors(err) {
+  const apiErrors = err?.response?.data?.errors;
+
+  if (!apiErrors || typeof apiErrors !== "object") return null;
+
+  const mapped = {};
+
+  Object.keys(apiErrors).forEach((field) => {
+    const firstMessage = Array.isArray(apiErrors[field]) ? apiErrors[field][0] : apiErrors[field];
+    mapped[field] = friendlyCustomerFieldError(field, firstMessage);
+  });
+
+  return mapped;
+}
+
+function normalizeCustomerName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+async function checkDuplicateCustomerName(name, ignoreId = null) {
+  const normalizedName = normalizeCustomerName(name);
+
+  if (!normalizedName) return false;
+
+  const res = await customersService.list({
+    search: name,
+    per_page: 100,
+    with_trashed: true,
+  });
+
+  const { items } = unwrapList(res);
+
+  return items.some((customer) => {
+    const sameName = normalizeCustomerName(customer.name) === normalizedName;
+    const sameId = ignoreId && String(customer.id) === String(ignoreId);
+
+    return sameName && !sameId;
+  });
 }
 
 function CustomersPage() {
@@ -175,12 +283,13 @@ function CustomersPage() {
   const [confirmRestore, setConfirmRestore] = useState(null);
   const [confirmForce, setConfirmForce] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
   const [permissions, setPermissions] = useState(() =>
     collectPermissionKeys(user?.permissions || user?.role?.permissions || [])
   );
   const [permissionsLoading, setPermissionsLoading] = useState(false);
 
-  const withTrashed = statusFilter === "" || statusFilter === "deleted";
+  const withTrashed = statusFilter === "deleted";
 
   useEffect(() => {
     const localPermissions = collectPermissionKeys(user?.permissions || user?.role?.permissions || []);
@@ -221,6 +330,7 @@ function CustomersPage() {
     }
 
     setBalancesLoading(true);
+
     const result = {};
 
     await Promise.all(
@@ -253,7 +363,7 @@ function CustomersPage() {
 
       let { items: list, meta: m } = unwrapList(res);
 
-      if (statusFilter === "active") {
+      if (statusFilter === "" || statusFilter === "active") {
         list = list.filter((c) => !c.deleted_at && c.is_active !== false);
       }
 
@@ -396,13 +506,30 @@ function CustomersPage() {
 
   async function handleCreate(payload) {
     setBusy(true);
+    setFormErrors({});
 
     try {
+      const nameExists = await checkDuplicateCustomerName(payload.name);
+
+      if (nameExists) {
+        setFormErrors({
+          name: "هذا الاسم موجود مسبقًا، الرجاء تغييره",
+        });
+        return;
+      }
+
       await customersService.create(payload);
       toast.success(payload.type === "supplier" ? "تمت إضافة المورد بنجاح" : "تمت إضافة العميل بنجاح");
       setOpenAdd(false);
       await Promise.all([load(), loadStats()]);
     } catch (err) {
+      const validationErrors = mapCustomerValidationErrors(err);
+
+      if (validationErrors) {
+        setFormErrors(validationErrors);
+        return;
+      }
+
       toast.error(extractApiError(err));
     } finally {
       setBusy(false);
@@ -411,8 +538,18 @@ function CustomersPage() {
 
   async function handleUpdate(id, payload) {
     setBusy(true);
+    setFormErrors({});
 
     try {
+      const nameExists = await checkDuplicateCustomerName(payload.name, id);
+
+      if (nameExists) {
+        setFormErrors({
+          name: "هذا الاسم موجود مسبقًا، الرجاء تغييره",
+        });
+        return;
+      }
+
       await customersService.update(id, payload);
       toast.success("تم تحديث البيانات");
       setEditCustomer(null);
@@ -423,6 +560,13 @@ function CustomersPage() {
         setTimeout(() => setSelectedId(String(id)), 0);
       }
     } catch (err) {
+      const validationErrors = mapCustomerValidationErrors(err);
+
+      if (validationErrors) {
+        setFormErrors(validationErrors);
+        return;
+      }
+
       toast.error(extractApiError(err));
     } finally {
       setBusy(false);
@@ -541,7 +685,10 @@ function CustomersPage() {
         <div className="relative z-20 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setOpenAdd(true)}
+            onClick={() => {
+              setFormErrors({});
+              setOpenAdd(true);
+            }}
             disabled={permissionsLoading}
             className="inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
             style={{ background: "hsl(179, 87%, 28%)" }}
@@ -708,7 +855,13 @@ function CustomersPage() {
 
                               {!customer.deleted_at && (
                                 <>
-                                  <IconBtn icon={Edit3} onClick={() => setEditCustomer(customer)} />
+                                  <IconBtn
+                                    icon={Edit3}
+                                    onClick={() => {
+                                      setFormErrors({});
+                                      setEditCustomer(customer);
+                                    }}
+                                  />
                                   <IconBtn icon={Trash2} onClick={() => setConfirmDelete(customer)} color="rose" />
                                 </>
                               )}
@@ -752,7 +905,10 @@ function CustomersPage() {
               data={selectedData}
               loading={selectedLoading}
               onClose={() => setSelectedId(null)}
-              onEdit={(customer) => setEditCustomer(customer)}
+              onEdit={(customer) => {
+                setFormErrors({});
+                setEditCustomer(customer);
+              }}
               onDelete={(customer) => setConfirmDelete(customer)}
               onRestore={(customer) => setConfirmRestore(customer)}
             />
@@ -762,18 +918,37 @@ function CustomersPage() {
 
       <Modal
         open={openAdd}
-        onClose={() => !busy && setOpenAdd(false)}
+        onClose={() => {
+          if (!busy) {
+            setFormErrors({});
+            setOpenAdd(false);
+          }
+        }}
         title="إضافة عميل جديد"
         subtitle="أدخل بيانات العميل الأساسية"
         icon={UserPlus}
         size="md"
       >
-        <CustomerForm onSubmit={handleCreate} loading={busy} onCancel={() => setOpenAdd(false)} />
+        <CustomerForm
+          onSubmit={handleCreate}
+          loading={busy}
+          errors={formErrors}
+          onClearError={(key) => setFormErrors((prev) => ({ ...prev, [key]: "" }))}
+          onCancel={() => {
+            setFormErrors({});
+            setOpenAdd(false);
+          }}
+        />
       </Modal>
 
       <Modal
         open={!!editCustomer}
-        onClose={() => !busy && setEditCustomer(null)}
+        onClose={() => {
+          if (!busy) {
+            setFormErrors({});
+            setEditCustomer(null);
+          }
+        }}
         title="تعديل العميل"
         subtitle={editCustomer?.name}
         icon={Edit3}
@@ -784,7 +959,12 @@ function CustomersPage() {
             initial={editCustomer}
             onSubmit={(payload) => handleUpdate(editCustomer.id, payload)}
             loading={busy}
-            onCancel={() => setEditCustomer(null)}
+            errors={formErrors}
+            onClearError={(key) => setFormErrors((prev) => ({ ...prev, [key]: "" }))}
+            onCancel={() => {
+              setFormErrors({});
+              setEditCustomer(null);
+            }}
           />
         )}
       </Modal>
@@ -1199,7 +1379,7 @@ function TableSkeleton() {
   );
 }
 
-function CustomerForm({ initial, onSubmit, loading, onCancel }) {
+function CustomerForm({ initial, onSubmit, loading, onCancel, errors = {}, onClearError }) {
   const [form, setForm] = useState({
     customer_code: initial?.customer_code || "",
     name: initial?.name || "",
@@ -1209,15 +1389,57 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
     is_active: initial?.is_active !== false,
   });
 
+  const [localErrors, setLocalErrors] = useState({});
+
+  const fieldErrors = {
+    ...errors,
+    ...localErrors,
+  };
+
+  function clearFieldError(key) {
+    setLocalErrors((prev) => ({ ...prev, [key]: "" }));
+    onClearError?.(key);
+  }
+
+  function validateForm() {
+    const nextErrors = {};
+
+    if (!String(form.name || "").trim()) {
+      nextErrors.name = "الرجاء إدخال اسم العميل";
+    }
+
+    if (!String(form.customer_code || "").trim()) {
+      nextErrors.customer_code = "الرجاء إدخال كود العميل";
+    }
+
+    if (!form.type) {
+      nextErrors.type = "الرجاء اختيار التصنيف";
+    }
+
+    if (form.balance_usd !== "" && Number.isNaN(Number(form.balance_usd))) {
+      nextErrors.balance_usd = "الرصيد الابتدائي يجب أن يكون رقمًا صحيحًا";
+    }
+
+    if (form.balance_usd !== "" && Number(form.balance_usd) < 0) {
+      nextErrors.balance_usd = "الرصيد الابتدائي لا يمكن أن يكون أقل من صفر";
+    }
+
+    setLocalErrors(nextErrors);
+
+    return Object.keys(nextErrors).length === 0;
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
+
+    if (!validateForm()) return;
 
     const payload = {
       customer_code: form.customer_code.trim(),
       name: form.name.trim(),
       type: form.type,
       note: form.note.trim(),
-      category: form.type === "supplier" ? "supplier" : "regular",
+     category: form.type === "supplier" ? "company" : "regular",
       balance_usd: form.balance_usd === "" ? 0 : Number(form.balance_usd),
       is_active: form.is_active,
     };
@@ -1228,36 +1450,55 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
+    <form onSubmit={handleSubmit} noValidate className="space-y-4" dir="rtl">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="الاسم">
+        <Field label="الاسم" error={fieldErrors.name}>
           <input
-            required
             value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="ep-input"
+            onChange={(e) => {
+              setForm({ ...form, name: e.target.value });
+              clearFieldError("name");
+            }}
+            className={[
+              "ep-input",
+              fieldErrors.name ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
+            ].join(" ")}
             placeholder="اسم العميل"
             disabled={loading}
           />
         </Field>
 
-        <Field label="كود العميل">
+        <Field label="كود العميل" error={fieldErrors.customer_code}>
           <input
-            required
             value={form.customer_code}
-            onChange={(e) => setForm({ ...form, customer_code: e.target.value })}
-            className="ep-input"
+            onChange={(e) => {
+              setForm({ ...form, customer_code: e.target.value });
+              clearFieldError("customer_code");
+            }}
+            className={[
+              "ep-input",
+              fieldErrors.customer_code ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
+            ].join(" ")}
             placeholder="335"
             dir="ltr"
             disabled={loading}
           />
         </Field>
 
-        <Field label="التصنيف">
+        <Field label="التصنيف" error={fieldErrors.type || fieldErrors.category}>
           <select
             value={form.type}
-            onChange={(e) => setForm({ ...form, type: e.target.value })}
-            className="ep-input appearance-none"
+            onChange={(e) => {
+              setForm({ ...form, type: e.target.value });
+              clearFieldError("type");
+              clearFieldError("category");
+            }}
+            className={[
+              "ep-input appearance-none",
+              fieldErrors.type || fieldErrors.category
+                ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10"
+                : "",
+            ].join(" ")}
             disabled={loading}
           >
             <option value="customer">عميل</option>
@@ -1265,24 +1506,36 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
           </select>
         </Field>
 
-        <Field label="الرصيد الابتدائي">
+        <Field label="الرصيد الابتدائي" error={fieldErrors.balance_usd}>
           <input
             type="number"
             step="0.01"
             value={form.balance_usd}
-            onChange={(e) => setForm({ ...form, balance_usd: e.target.value })}
-            className="ep-input"
+            onChange={(e) => {
+              setForm({ ...form, balance_usd: e.target.value });
+              clearFieldError("balance_usd");
+            }}
+            className={[
+              "ep-input",
+              fieldErrors.balance_usd ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
+            ].join(" ")}
             placeholder="0.00"
             dir="ltr"
             disabled={loading}
           />
         </Field>
 
-        <Field label="الحالة">
+        <Field label="الحالة" error={fieldErrors.is_active}>
           <select
             value={form.is_active ? "1" : "0"}
-            onChange={(e) => setForm({ ...form, is_active: e.target.value === "1" })}
-            className="ep-input appearance-none"
+            onChange={(e) => {
+              setForm({ ...form, is_active: e.target.value === "1" });
+              clearFieldError("is_active");
+            }}
+            className={[
+              "ep-input appearance-none",
+              fieldErrors.is_active ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
+            ].join(" ")}
             disabled={loading}
           >
             <option value="1">نشط</option>
@@ -1291,11 +1544,17 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
         </Field>
       </div>
 
-      <Field label="ملاحظات">
+      <Field label="ملاحظات" error={fieldErrors.note}>
         <textarea
           value={form.note}
-          onChange={(e) => setForm({ ...form, note: e.target.value })}
-          className="ep-input min-h-24 resize-none py-3"
+          onChange={(e) => {
+            setForm({ ...form, note: e.target.value });
+            clearFieldError("note");
+          }}
+          className={[
+            "ep-input min-h-24 resize-none py-3",
+            fieldErrors.note ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
+          ].join(" ")}
           placeholder="ملاحظات اختيارية..."
           disabled={loading}
         />
@@ -1320,11 +1579,18 @@ function CustomerForm({ initial, onSubmit, loading, onCancel }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, error }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-bold text-slate-700">{label}</span>
+
       {children}
+
+      {error && (
+        <p className="mt-1.5 text-right text-[11px] font-black text-rose-600">
+          {error}
+        </p>
+      )}
     </label>
   );
 }
