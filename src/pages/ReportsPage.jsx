@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  ChartNoAxesColumnIncreasing,
-  FileText,
-  RefreshCw,
-  ArrowDown,
-  DollarSign,
   Activity,
+  ArrowDown,
+  Calendar,
+  ChartNoAxesColumnIncreasing,
+  Database,
+  DollarSign,
+  Download,
+  FileText,
+  Loader2,
+  ReceiptText,
+  RefreshCw,
+  Search,
   TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-  Filter,
+  UserRound,
+  Users,
+  Wallet,
 } from "lucide-react";
+
 import EmptyState from "../shared/EmptyState";
 import ErrorState from "../shared/ErrorState";
 import Badge from "../shared/Badge";
@@ -20,16 +27,118 @@ import reportsService from "../services/reports";
 import { extractApiError, formatCompactNumber, formatMoney } from "../shared/helpers";
 
 const REPORT_TYPES = [
-  { key: "daily", label: "التقرير اليومي" },
-  { key: "monthly", label: "التقرير الشهري" },
+  {
+    key: "daily",
+    label: "التقرير اليومي",
+    subtitle: "حركة يوم محدد",
+    icon: Activity,
+    mode: "date",
+    service: "daily",
+    exportType: "daily",
+  },
+  {
+    key: "monthly",
+    label: "التقرير الشهري",
+    subtitle: "حركة شهر كامل",
+    icon: ChartNoAxesColumnIncreasing,
+    mode: "month",
+    service: "monthly",
+    exportType: "monthly",
+  },
+  {
+    key: "dailyProfit",
+    label: "أرباح يومية",
+    subtitle: "صافي ربح يوم محدد",
+    icon: TrendingUp,
+    mode: "date",
+    service: "dailyProfit",
+    exportType: "daily-profit",
+  },
+  {
+    key: "monthlyProfit",
+    label: "أرباح شهرية",
+    subtitle: "صافي ربح شهر محدد",
+    icon: TrendingUp,
+    mode: "month",
+    service: "monthlyProfit",
+    exportType: "monthly-profit",
+  },
+  {
+    key: "profitSummary",
+    label: "ملخص الأرباح",
+    subtitle: "أرباح الفترة المحددة",
+    icon: DollarSign,
+    mode: "range",
+    service: "profitSummary",
+    exportType: "profit-summary",
+  },
+  {
+    key: "profitByUser",
+    label: "الأرباح حسب المستخدم",
+    subtitle: "تحليل الربح لكل مستخدم",
+    icon: Users,
+    mode: "range",
+    service: "profitByUser",
+    exportType: "profit-by-user",
+  },
+  {
+    key: "profitBySupplier",
+    label: "الأرباح حسب المورد",
+    subtitle: "تحليل الربح حسب المورد",
+    icon: UserRound,
+    mode: "range",
+    service: "profitBySupplier",
+    exportType: "profit-by-supplier",
+  },
+  {
+    key: "usersComparison",
+    label: "مقارنة المستخدمين",
+    subtitle: "مقارنة أداء المستخدمين",
+    icon: Users,
+    mode: "range",
+    service: "usersComparison",
+    exportType: "users-comparison",
+  },
+  {
+    key: "customerStatement",
+    label: "كشف حساب عميل",
+    subtitle: "كشف حركة عميل محدد",
+    icon: FileText,
+    mode: "customerRange",
+    service: "customerStatement",
+    exportType: "statement",
+  },
+  {
+    key: "capitalReport",
+    label: "تقرير رأس المال",
+    subtitle: "حركة رأس المال",
+    icon: Wallet,
+    mode: "range",
+    service: "capitalReport",
+    exportType: "capital-report",
+  },
+  {
+    key: "expenseReport",
+    label: "تقرير المصروفات",
+    subtitle: "مصروفات الفترة",
+    icon: ReceiptText,
+    mode: "range",
+    service: "expenseReport",
+    exportType: "expense-report",
+  },
+  {
+    key: "netWorthReport",
+    label: "صافي الثروة",
+    subtitle: "الوضع المالي الحالي",
+    icon: Database,
+    mode: "none",
+    service: "netWorthReport",
+    exportType: "net-worth-report",
+  },
 ];
 
-const CURRENCIES = [
-  { code: "USD", label: "الدولار الأمريكي", symbol: "$" },
-  { code: "EUR", label: "اليورو", symbol: "€" },
-  { code: "GBP", label: "الجنيه الإسترليني", symbol: "£" },
-  { code: "ILS", label: "الشيكل", symbol: "₪" },
-];
+const READY_STATUSES = ["ready", "completed", "done", "success", "finished"];
+const FAIL_STATUSES = ["failed", "error", "cancelled", "canceled"];
 
 function getToday() {
   return new Date().toISOString().split("T")[0];
@@ -44,193 +153,372 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function unwrapData(res) {
-  return res?.data || res || {};
-}
-
-function getSummary(data) {
-  return (
-    data?.summary ||
-    data?.total_summary ||
-    data?.totals ||
-    data?.report?.summary ||
-    data ||
-    {}
-  );
-}
-
-function getList(...values) {
-  for (const value of values) {
-    if (Array.isArray(value)) return value;
-  }
-
-  return [];
-}
-
-function normalizeBreakdown(data) {
-  const list = getList(
-    data?.breakdown,
-    data?.type_breakdown,
-    data?.transactions_by_type,
-    data?.distribution,
-    data?.by_currency,
-    data?.summary?.breakdown,
-    data?.total_summary?.breakdown
-  );
-
-  return list.map((item) => {
-    const type = item.type || item.name || item.key || item.currency_code || "other";
-    const receive =
-      item.deposits ??
-      item.receive ??
-      item.total_receive ??
-      item.received ??
-      item.in ??
-      0;
-    const send =
-      item.withdrawals ??
-      item.send ??
-      item.total_send ??
-      item.delivered ??
-      item.out ??
-      0;
-    const count = item.count ?? item.transactions_count ?? item.total ?? 0;
-    const net = item.net ?? item.net_movement ?? toNumber(receive) - toNumber(send);
-
-    return {
-      ...item,
-      type,
-      label: item.label || item.currency_code || getTypeLabel(type),
-      count: toNumber(count),
-      deposits: toNumber(receive),
-      withdrawals: toNumber(send),
-      net: toNumber(net),
-      percentage: toNumber(item.percentage),
-    };
-  });
-}
-
-function normalizeChart(data) {
-  const list = getList(
-    data?.chart,
-    data?.daily_chart,
-    data?.daily_totals,
-    data?.movement_chart,
-    data?.daily_movement,
-    data?.series,
-    data?.labels?.map((label, index) => ({
-      date: label,
-      net: data?.net_values?.[index] ?? data?.values?.[index] ?? 0,
-    }))
-  );
-
-  return list.map((item) => ({
-    date: item.date || item.label || item.day || item.created_at,
-    net: toNumber(item.net ?? item.net_movement ?? item.value ?? item.amount ?? 0),
-    value: toNumber(item.value ?? item.net ?? item.net_movement ?? item.amount ?? 0),
-  }));
-}
-
-function normalizeTopTransactions(data) {
-  return getList(
-    data?.top_transactions,
-    data?.largest_transactions,
-    data?.transactions,
-    data?.recent_transactions
-  );
-}
-
-function getTypeLabel(type) {
-  const labels = {
-    receive: "إيداع",
-    deposit: "إيداع",
-    send: "سحب",
-    withdrawal: "سحب",
-    withdraw: "سحب",
-    transfer: "تحويل",
-    exchange: "صرف",
-    expense: "مصروف",
-    other: "أخرى",
-  };
-
-  return labels[type] || type;
+function unwrapPayload(res) {
+  const response = res?.data || res || {};
+  return response?.data || response || {};
 }
 
 function getExportId(res) {
-  return (
-    res?.data?.id ||
-    res?.data?.job_id ||
-    res?.data?.export_id ||
-    res?.data?.uuid ||
-    res?.id ||
-    res?.job_id ||
-    res?.export_id ||
-    res?.uuid
-  );
+  const data = unwrapPayload(res);
+  return data?.job_id || data?.id || data?.export_id || data?.uuid || null;
 }
 
 function getExportStatus(res) {
-  return (
-    res?.data?.status ||
-    res?.status ||
-    res?.data?.state ||
-    res?.state ||
-    "pending"
-  );
+  const data = unwrapPayload(res);
+  return data?.status || data?.state || "queued";
 }
 
-function getFileExtension(format) {
-  return format === "excel" ? "xlsx" : "pdf";
+function labelOf(key) {
+  const labels = {
+    id: "الرقم",
+    type: "النوع",
+    title: "العنوان",
+    date: "التاريخ",
+    date_from: "من تاريخ",
+    date_to: "إلى تاريخ",
+    generated_at: "وقت الإنشاء",
+    month: "الشهر",
+    year: "السنة",
+    user: "المستخدم",
+    user_name: "المستخدم",
+    customer: "العميل",
+    customer_name: "العميل",
+    supplier: "المورد",
+    supplier_name: "المورد",
+    receive: "الداخل",
+    send: "الخارج",
+    net: "الصافي",
+    count: "العدد",
+    amount: "المبلغ",
+    profit: "الربح",
+    total_profit_usd: "إجمالي الربح",
+    total_operations: "إجمالي العمليات",
+    completed_operations: "مكتملة",
+    pending_operations: "معلقة",
+    cancelled_operations: "ملغاة",
+    capital_balance: "رصيد رأس المال",
+    free_capital: "رأس المال الحر",
+    boxes_total_balance: "إجمالي الصناديق",
+    net_worth: "صافي الثروة",
+    currency: "العملة",
+    currency_code: "العملة",
+    status: "الحالة",
+    reference_number: "الرقم المرجعي",
+    created_at: "تاريخ الإنشاء",
+  };
+
+  return labels[key] || key.replaceAll("_", " ");
 }
 
-function getMimeType(format) {
-  if (format === "excel") {
-    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+function formatDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("ar-EG", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString("ar-EG", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCell(value, key = "") {
+  if (value === null || value === undefined || value === "") return "—";
+
+  if (key.includes("_at")) return formatDateTime(value);
+  if (key.includes("date")) return formatDate(value);
+
+  if (typeof value === "boolean") return value ? "نعم" : "لا";
+
+  if (typeof value === "number") {
+    if (
+      key.includes("amount") ||
+      key.includes("balance") ||
+      key.includes("profit") ||
+      key.includes("expense") ||
+      key.includes("total") ||
+      key.includes("net") ||
+      key.includes("receive") ||
+      key.includes("send")
+    ) {
+      return formatMoney(value);
+    }
+
+    return value.toLocaleString();
   }
 
-  return "application/pdf";
+  if (typeof value === "object") {
+    return value?.name || value?.label || value?.title || value?.email || "—";
+  }
+
+  return String(value);
 }
 
-function ReportsPage() {
+function getModeLabel(mode) {
+  const labels = {
+    date: "فلتر يوم",
+    month: "فلتر شهر",
+    range: "فلتر فترة",
+    customerRange: "عميل وفترة",
+    none: "بدون فلتر",
+  };
+
+  return labels[mode] || mode;
+}
+
+function getTableSections(payload) {
+  const sections = [
+    ["transactions", "المعاملات"],
+    ["rows", "السجلات"],
+    ["daily_totals", "الحركة اليومية"],
+    ["by_currency", "حسب العملة"],
+    ["by_type", "حسب النوع"],
+    ["expenses", "المصروفات"],
+    ["operations", "العمليات"],
+  ];
+
+  return sections
+    .map(([key, title]) => ({
+      key,
+      title,
+      rows: Array.isArray(payload?.[key]) ? payload[key] : [],
+    }))
+    .filter((section) => section.rows.length > 0);
+}
+
+function getColumns(rows = []) {
+  const keys = [];
+
+  rows.slice(0, 10).forEach((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return;
+
+    Object.keys(row).forEach((key) => {
+      if (!keys.includes(key)) keys.push(key);
+    });
+  });
+
+  const priority = [
+    "id",
+    "date",
+    "created_at",
+    "name",
+    "user_name",
+    "customer_name",
+    "supplier_name",
+    "type",
+    "currency",
+    "currency_code",
+    "amount",
+    "receive",
+    "send",
+    "net",
+    "profit",
+    "total_profit_usd",
+    "balance",
+    "status",
+    "reference_number",
+  ];
+
+  return keys
+    .sort((a, b) => {
+      const ai = priority.indexOf(a);
+      const bi = priority.indexOf(b);
+
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+
+      return ai - bi;
+    })
+    .slice(0, 9);
+}
+
+function makeCard(title, value, icon, color, kind = "money", note = "") {
+  return { title, value, icon, color, kind, note };
+}
+
+function buildCards(reportKey, payload = {}) {
+  const totals = payload?.totals || {};
+
+  if (["daily", "monthly", "usersComparison"].includes(reportKey)) {
+    return [
+      makeCard("إجمالي الداخل", totals.receive ?? payload.receive ?? 0, DollarSign, "emerald"),
+      makeCard("إجمالي الخارج", totals.send ?? payload.send ?? 0, ArrowDown, "rose"),
+      makeCard("الصافي", totals.net ?? payload.net ?? 0, TrendingUp, "blue"),
+      makeCard("عدد المعاملات", totals.count ?? payload.count ?? 0, Activity, "violet", "count"),
+    ];
+  }
+
+  if (reportKey === "profitSummary") {
+    return [
+      makeCard("إجمالي الربح", payload.total_profit_usd ?? 0, DollarSign, "emerald"),
+      makeCard("إجمالي العمليات", payload.total_operations ?? 0, Activity, "blue", "count"),
+      makeCard("عمليات معلقة", payload.pending_operations ?? 0, Activity, "amber", "count"),
+      makeCard("عمليات مكتملة", payload.completed_operations ?? 0, TrendingUp, "violet", "count"),
+    ];
+  }
+
+  if (["dailyProfit", "monthlyProfit", "profitByUser", "profitBySupplier"].includes(reportKey)) {
+    return [
+      makeCard("إجمالي الربح", payload.total_profit_usd ?? 0, DollarSign, "emerald"),
+      makeCard("عدد السجلات", Array.isArray(payload.rows) ? payload.rows.length : 0, Activity, "violet", "count"),
+      makeCard("من تاريخ", payload.date_from || payload.date || "—", Calendar, "blue", "text"),
+      makeCard("إلى تاريخ", payload.date_to || payload.date || "—", Calendar, "amber", "text"),
+    ];
+  }
+
+  if (reportKey === "capitalReport") {
+    return [
+      makeCard("رصيد رأس المال", payload.capital_balance ?? 0, Wallet, "emerald"),
+      makeCard("رأس المال الحر", payload.free_capital ?? 0, DollarSign, "blue"),
+      makeCard("أنواع الحركة", Array.isArray(payload.by_type) ? payload.by_type.length : 0, Activity, "violet", "count"),
+      makeCard("عدد السجلات", Array.isArray(payload.transactions) ? payload.transactions.length : 0, FileText, "amber", "count"),
+    ];
+  }
+
+  if (reportKey === "expenseReport") {
+    return [
+      makeCard("إجمالي المصروفات", payload.total_expenses ?? payload.expenses_total ?? 0, ReceiptText, "rose"),
+      makeCard("عدد المصروفات", Array.isArray(payload.expenses) ? payload.expenses.length : Array.isArray(payload.rows) ? payload.rows.length : payload.count ?? 0, Activity, "violet", "count"),
+      makeCard("من تاريخ", payload.date_from || "—", Calendar, "blue", "text"),
+      makeCard("إلى تاريخ", payload.date_to || "—", Calendar, "amber", "text"),
+    ];
+  }
+
+  if (reportKey === "netWorthReport") {
+    return [
+      makeCard("صافي الثروة", payload.net_worth ?? 0, TrendingUp, "emerald"),
+      makeCard("إجمالي الصناديق", payload.boxes_total_balance ?? 0, Wallet, "blue"),
+      makeCard("رصيد رأس المال", payload.capital_balance ?? 0, DollarSign, "violet"),
+      makeCard("رأس المال الحر", payload.free_capital ?? 0, Database, "amber"),
+    ];
+  }
+
+  if (reportKey === "customerStatement") {
+    return [
+      makeCard("إجمالي الداخل", payload.total_receive ?? payload.receive ?? totals.receive ?? 0, DollarSign, "emerald"),
+      makeCard("إجمالي الخارج", payload.total_send ?? payload.send ?? totals.send ?? 0, ArrowDown, "rose"),
+      makeCard("الرصيد / الصافي", payload.balance ?? payload.net ?? totals.net ?? 0, TrendingUp, "blue"),
+      makeCard("عدد السجلات", Array.isArray(payload.transactions) ? payload.transactions.length : Array.isArray(payload.rows) ? payload.rows.length : payload.count ?? 0, Activity, "violet", "count"),
+    ];
+  }
+
+  return [
+    makeCard("إجمالي الداخل", 0, DollarSign, "emerald"),
+    makeCard("إجمالي الخارج", 0, ArrowDown, "rose"),
+    makeCard("الصافي", 0, TrendingUp, "blue"),
+    makeCard("عدد السجلات", 0, Activity, "violet", "count"),
+  ];
+}
+
+function getInfoItems(payload = {}) {
+  const keys = ["title", "type", "date", "date_from", "date_to", "month", "year", "generated_at"];
+
+  return keys
+    .filter((key) => payload?.[key] !== undefined && payload?.[key] !== null && payload?.[key] !== "")
+    .map((key) => ({
+      key,
+      label: labelOf(key),
+      value: payload[key],
+    }));
+}
+
+function displayCardValue(card) {
+  if (card.kind === "money") return formatMoney(toNumber(card.value));
+  if (card.kind === "count") return formatCompactNumber(toNumber(card.value));
+  if (card.kind === "text") {
+    if (String(card.title).includes("تاريخ")) return formatDate(card.value);
+    return String(card.value || "—");
+  }
+
+  return String(card.value || 0);
+}
+
+export default function ReportsPage() {
   const toast = useToast();
   const today = getToday();
   const currentMonth = getCurrentMonth();
+  const pollTimerRef = useRef(null);
 
-  const [reportType, setReportType] = useState("daily");
+  const [activeReportKey, setActiveReportKey] = useState("daily");
+  const [date, setDate] = useState(today);
+  const [month, setMonth] = useState(currentMonth);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
-  const [data, setData] = useState(null);
+  const [customerId, setCustomerId] = useState("");
+
+  const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [exportJob, setExportJob] = useState(null);
+  const [error, setError] = useState(null);
+
+  const activeReport = useMemo(
+    () => REPORT_TYPES.find((item) => item.key === activeReportKey) || REPORT_TYPES[0],
+    [activeReportKey]
+  );
+
+  const cards = useMemo(() => buildCards(activeReportKey, payload || {}), [activeReportKey, payload]);
+  const sections = useMemo(() => getTableSections(payload || {}), [payload]);
+  const infoItems = useMemo(() => getInfoItems(payload || {}), [payload]);
+  const ActiveIcon = activeReport.icon || FileText;
+
+  function buildParams(report = activeReport) {
+    if (report.mode === "date") return { date };
+
+    if (report.mode === "month") {
+      const [year, selectedMonth] = month.split("-");
+      return { year, month: selectedMonth };
+    }
+
+    if (report.mode === "range" || report.mode === "customerRange") {
+      return { date_from: dateFrom, date_to: dateTo };
+    }
+
+    return {};
+  }
 
   async function load() {
+    if (activeReport.mode === "customerRange" && !customerId.trim()) {
+      setPayload(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
+      const params = buildParams(activeReport);
       let res;
 
-      if (reportType === "monthly") {
-        const monthValue = dateFrom.length === 7 ? dateFrom : currentMonth;
-        const [year, month] = monthValue.split("-");
-
-        res = await reportsService.monthly({
-          year,
-          month,
-        });
+      if (activeReport.mode === "customerRange") {
+        res = await reportsService.customerStatement(customerId.trim(), params);
       } else {
-        res = await reportsService.daily({
-          date: dateFrom,
-          date_from: dateFrom,
-          date_to: dateTo,
-        });
+        res = await reportsService[activeReport.service](params);
       }
 
-      setData(unwrapData(res));
+      setPayload(unwrapPayload(res));
     } catch (err) {
+      setPayload(null);
       setError(err);
-      setData(null);
     } finally {
       setLoading(false);
     }
@@ -238,114 +526,89 @@ function ReportsPage() {
 
   useEffect(() => {
     load();
-  }, [reportType, dateFrom, dateTo]);
 
-  function handleReportTypeChange(value) {
-    setReportType(value);
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, [activeReportKey]);
 
-    if (value === "monthly") {
-      setDateFrom(currentMonth);
-      return;
-    }
-
-    setDateFrom(today);
-    setDateTo(today);
+  function handleReportChange(key) {
+    setActiveReportKey(key);
+    setPayload(null);
+    setError(null);
+    setExportJob(null);
   }
 
-  function buildExportPayload(format) {
-    if (reportType === "monthly") {
-      const monthValue = dateFrom.length === 7 ? dateFrom : currentMonth;
-      const [year, month] = monthValue.split("-");
+  function buildExportPayload() {
+    const params = buildParams(activeReport);
 
-      return {
-        type: "monthly",
-        format,
-        params: {
-          year,
-          month,
-        },
-      };
+    if (activeReport.mode === "customerRange") {
+      params.customer_id = customerId.trim();
     }
 
     return {
-      type: "daily",
-      format,
-      params: {
-        date: dateFrom,
-        date_from: dateFrom,
-        date_to: dateTo,
-      },
+      type: activeReport.exportType,
+      format: "pdf",
+      params,
     };
   }
 
-  async function handleExport(format) {
+  async function handleExportPdf() {
     if (exporting) return;
 
+    if (activeReport.mode === "customerRange" && !customerId.trim()) {
+      toast.error("أدخل رقم العميل أولاً");
+      return;
+    }
+
     setExporting(true);
+    setExportJob(null);
 
     try {
-      const payload = buildExportPayload(format);
-      const res = await reportsService.queueExport(payload);
-      const exportId = getExportId(res);
+      const res = await reportsService.queueExport(buildExportPayload());
+      const jobId = getExportId(res);
 
-      if (!exportId) {
-        toast.error("لم يتم استلام رقم ملف التصدير من الخادم");
+      if (!jobId) {
+        toast.error("لم يتم استلام رقم مهمة التصدير من الخادم");
         setExporting(false);
         return;
       }
 
-      toast.info("جارٍ تجهيز الملف...");
-      await pollExport(exportId, format);
+      setExportJob({ id: jobId, status: "queued" });
+      toast.info("تمت إضافة التقرير إلى قائمة التصدير");
+      pollExport(jobId, 0);
     } catch (err) {
       toast.error(extractApiError(err));
       setExporting(false);
     }
   }
 
-  async function pollExport(id, format, attempts = 0) {
-    if (attempts > 30) {
-      toast.error("انتهت مهلة التصدير");
+  async function pollExport(jobId, attempts = 0) {
+    if (attempts > 40) {
+      toast.error("انتهت مهلة انتظار التصدير");
       setExporting(false);
       return;
     }
 
     try {
-      const res = await reportsService.exportStatus(id);
+      const res = await reportsService.exportStatus(jobId);
       const status = getExportStatus(res);
 
-      if (["ready", "completed", "done", "success", "finished"].includes(status)) {
-        const file = await reportsService.exportDownload(id);
-        const extension = getFileExtension(format);
-        const fileName =
-          res?.data?.filename ||
-          res?.filename ||
-          `${reportType}-report-${dateFrom}.${extension}`;
+      setExportJob({ id: jobId, status });
 
-        const blob = new Blob([file.data], { type: getMimeType(format) });
-        const url = window.URL.createObjectURL(blob);
+      if (READY_STATUSES.includes(status)) {
+        await downloadExport(jobId, res);
+        return;
+      }
 
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-
-        window.URL.revokeObjectURL(url);
-
-        toast.success("تم تحميل الملف بنجاح");
+      if (FAIL_STATUSES.includes(status)) {
+        toast.error("فشل تجهيز ملف التصدير");
         setExporting(false);
         return;
       }
 
-      if (["failed", "error", "cancelled"].includes(status)) {
-        toast.error("فشل التصدير");
-        setExporting(false);
-        return;
-      }
-
-      setTimeout(() => {
-        pollExport(id, format, attempts + 1);
+      pollTimerRef.current = setTimeout(() => {
+        pollExport(jobId, attempts + 1);
       }, 2000);
     } catch (err) {
       toast.error(extractApiError(err));
@@ -353,676 +616,370 @@ function ReportsPage() {
     }
   }
 
-  const summary = useMemo(() => getSummary(data), [data]);
+  async function downloadExport(jobId, statusRes) {
+    try {
+      const file = await reportsService.exportDownload(jobId);
+      const statusPayload = unwrapPayload(statusRes);
 
-  const totalDeposits = toNumber(
-    summary.total_deposits ??
-      summary.total_receive ??
-      summary.receive ??
-      summary.received ??
-      summary.deposits ??
-      summary.income ??
-      0
-  );
+      const fileName =
+        statusPayload?.filename ||
+        statusPayload?.file_name ||
+        `${activeReport.key}-${Date.now()}.pdf`;
 
-  const totalWithdrawals = toNumber(
-    summary.total_withdrawals ??
-      summary.total_send ??
-      summary.send ??
-      summary.delivered ??
-      summary.withdrawals ??
-      summary.expense ??
-      0
-  );
+      const blob = new Blob([file.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
 
-  const netMovement = toNumber(
-    summary.net ??
-      summary.net_movement ??
-      summary.balance ??
-      summary.net_usd_value ??
-      totalDeposits - totalWithdrawals
-  );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
 
-  const transactionsCount = toNumber(
-    summary.transactions_count ??
-      summary.count ??
-      summary.total_transactions ??
-      summary.transactions ??
-      0
-  );
+      window.URL.revokeObjectURL(url);
 
-  const depositsChange = toNumber(summary.deposits_change ?? summary.receive_change ?? 0);
-  const withdrawalsChange = toNumber(summary.withdrawals_change ?? summary.send_change ?? 0);
-
-  const breakdown = useMemo(() => normalizeBreakdown(data), [data]);
-  const topTxns = useMemo(() => normalizeTopTransactions(data), [data]);
-  const chartData = useMemo(() => normalizeChart(data), [data]);
+      toast.success("تم تحميل التقرير بنجاح");
+    } catch (err) {
+      toast.error(extractApiError(err));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-8">
-      <div className="mb-6 min-w-0 overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="min-h-screen space-y-6 bg-slate-50 pb-8" dir="rtl">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 text-teal-700 shadow-sm">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700 shadow-sm">
               <ChartNoAxesColumnIncreasing className="h-7 w-7" />
             </div>
 
             <div className="text-right">
-              <h1 className="text-2xl font-black text-slate-900">التقارير</h1>
-              <p className="mt-0.5 text-sm text-slate-500">
-                تقارير شاملة لأداء العمليات المالية والحركة اليومية
+              <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
+                التقارير
+              </h1>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                تقارير الحركة، الأرباح، رأس المال، المصروفات، وكشوفات العملاء
               </p>
             </div>
           </div>
-        </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <label className="mb-1.5 block text-right text-xs font-bold text-slate-600">
-              نوع التقرير
-            </label>
-            <select
-              value={reportType}
-              onChange={(e) => handleReportTypeChange(e.target.value)}
-              className="h-10 w-44 cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus:border-teal-400 focus:outline-none"
-            >
-              {REPORT_TYPES.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <Filter className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-slate-400" />
-          </div>
-
-          <div className="relative">
-            <label className="mb-1.5 block text-right text-xs font-bold text-slate-600">
-              {reportType === "monthly" ? "الشهر" : "من تاريخ"}
-            </label>
-            <input
-              type={reportType === "monthly" ? "month" : "date"}
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-
-                if (reportType === "daily" && dateTo < e.target.value) {
-                  setDateTo(e.target.value);
-                }
-              }}
-              className="h-10 w-44 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus:border-teal-400 focus:outline-none"
-            />
-          </div>
-
-          {reportType === "daily" && (
-            <div className="relative">
-              <label className="mb-1.5 block text-right text-xs font-bold text-slate-600">
-                إلى تاريخ
-              </label>
-              <input
-                type="date"
-                value={dateTo}
-                min={dateFrom}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-10 w-44 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus:border-teal-400 focus:outline-none"
-              />
-            </div>
-          )}
-
-          <div className="mr-auto flex items-end gap-2">
-            <motion.button
-              type="button"
-              onClick={() => handleExport("pdf")}
-              disabled={exporting || loading}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FileText className="h-4 w-4" />
-              {exporting ? "جارٍ التصدير..." : "تصدير PDF"}
-            </motion.button>
-
-            <motion.button
+          <div className="flex flex-wrap items-center gap-2">
+            <button
               type="button"
               onClick={load}
               disabled={loading}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            </motion.button>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={exporting || loading}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              تصدير PDF
+            </button>
           </div>
         </div>
-      </div>
 
-      {error && !loading ? (
-        <ErrorState onRetry={load} />
-      ) : loading ? (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100" />
-            ))}
-          </div>
-          <div className="h-96 animate-pulse rounded-2xl bg-slate-100" />
-        </div>
-      ) : (
-        <>
-          <motion.section
-            className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 22xl:grid-cols-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-          >
-            <EnhancedStatCard
-              title="إجمالي الإيداعات"
-              value={totalDeposits}
-              currency="USD"
-              icon={DollarSign}
-              color="emerald"
-              change={depositsChange}
-              changeDir="up"
-            />
-
-            <EnhancedStatCard
-              title="إجمالي السحوبات"
-              value={totalWithdrawals}
-              currency="USD"
-              icon={ArrowDown}
-              color="rose"
-              change={withdrawalsChange}
-              changeDir="down"
-            />
-
-            <EnhancedStatCard
-              title="صافي الحركة"
-              value={netMovement}
-              currency="USD"
-              icon={TrendingUp}
-              color="blue"
-            />
-
-            <EnhancedStatCard
-              title="عدد المعاملات"
-              value={transactionsCount}
-              icon={Activity}
-              color="violet"
-              note="معاملة"
-              isCount
-            />
-          </motion.section>
-
-          <motion.div
-            className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_1.5fr_1fr]"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-          >
-            <div className="rounded-2xl min-w-0 overflow-hidden border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-              <h3 className="mb-6 flex items-center gap-2 text-right text-base font-black text-slate-900">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                تصنيف الحركة حسب النوع
-              </h3>
-              <BreakdownDonut data={breakdown} />
+        {exportJob && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="text-right">
+              <p className="text-sm font-black text-amber-900">حالة التصدير: {exportJob.status}</p>
+              <p className="mt-1 text-xs font-bold text-amber-700" dir="ltr">{exportJob.id}</p>
             </div>
 
-            <div className="rounded-2xl min-w-0 overflow-hidden border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-              <h3 className="mb-6 flex items-center gap-2 text-right text-base font-black text-slate-900">
-                <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                الحركة اليومية (صافي الحركة)
-              </h3>
-              {chartData.length > 0 ? (
-                <DailyChart data={chartData} />
-              ) : (
-                <EmptyState title="لا توجد بيانات للرسم البياني" />
+            <Badge color={READY_STATUSES.includes(exportJob.status) ? "emerald" : "amber"}>
+              PDF
+            </Badge>
+          </div>
+        )}
+      </section>
+
+      <div dir="ltr" className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+        <main dir="rtl" className="min-w-0 space-y-5">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700">
+                  <ActiveIcon className="h-7 w-7" />
+                </div>
+
+                <div className="text-right">
+                  <h2 className="text-xl font-black text-slate-950">{activeReport.label}</h2>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{activeReport.subtitle}</p>
+                </div>
+              </div>
+
+              <Badge color="teal">{getModeLabel(activeReport.mode)}</Badge>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-end gap-3">
+              {activeReport.mode === "date" && (
+                <Field label="التاريخ">
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="ep-input h-11 w-48" />
+                </Field>
               )}
+
+              {activeReport.mode === "month" && (
+                <Field label="الشهر">
+                  <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="ep-input h-11 w-48" />
+                </Field>
+              )}
+
+              {(activeReport.mode === "range" || activeReport.mode === "customerRange") && (
+                <>
+                  <Field label="من تاريخ">
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => {
+                        setDateFrom(e.target.value);
+                        if (dateTo < e.target.value) setDateTo(e.target.value);
+                      }}
+                      className="ep-input h-11 w-48"
+                    />
+                  </Field>
+
+                  <Field label="إلى تاريخ">
+                    <input type="date" min={dateFrom} value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="ep-input h-11 w-48" />
+                  </Field>
+                </>
+              )}
+
+              {activeReport.mode === "customerRange" && (
+                <Field label="رقم العميل">
+                  <input
+                    type="number"
+                    min="1"
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="ep-input h-11 w-48"
+                    placeholder="مثال: 1"
+                  />
+                </Field>
+              )}
+
+              <button
+                type="button"
+                onClick={load}
+                disabled={loading}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-teal-700 px-6 text-sm font-black text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                عرض التقرير
+              </button>
             </div>
+          </section>
 
-            <div className="rounded-2xl min-w-0 overflow-hidden border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-              <h3 className="mb-6 flex items-center gap-2 text-right text-base font-black text-slate-900">
-                <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                أكبر المعاملات
-              </h3>
-              {topTxns.length === 0 ? (
-                <EmptyState title="لا توجد معاملات" />
+          {error && !loading ? (
+            <ErrorState title="تعذّر تحميل التقرير" description={extractApiError(error)} onRetry={load} />
+          ) : loading ? (
+            <LoadingState />
+          ) : activeReport.mode === "customerRange" && !customerId.trim() ? (
+            <EmptyState icon={UserRound} title="أدخل رقم العميل" description="اكتب رقم العميل ثم اضغط عرض التقرير" />
+          ) : !payload ? (
+            <EmptyState icon={FileText} title="لا توجد بيانات" description="لا توجد بيانات لهذا التقرير حسب الفلاتر الحالية" />
+          ) : (
+            <>
+              <section className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
+                {cards.map((card) => (
+                  <StatCard key={card.title} card={card} />
+                ))}
+              </section>
+
+              {infoItems.length > 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                  <div className="mb-5 flex items-center justify-between">
+                    <span className="h-2.5 w-2.5 rounded-full bg-teal-600" />
+                    <h3 className="text-base font-black text-slate-950">ملخص التقرير</h3>
+                  </div>
+
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+                    {infoItems.map((item) => (
+                      <div key={item.key} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-right">
+                        <p className="text-xs font-black text-slate-500">{item.label}</p>
+                        <p className="mt-2 truncate text-base font-black text-slate-950">
+                          {item.key === "generated_at" ? formatDateTime(item.value) : formatCell(item.value, item.key)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {sections.length === 0 ? (
+                <EmptyState icon={FileText} title="لا توجد سجلات تفصيلية" description="القيم الحالية ظاهرة في البطاقات وملخص التقرير" />
               ) : (
-                <div className="space-y-3">
-                  {topTxns.slice(0, 5).map((t, idx) => {
-                    const positive = ["receive", "deposit"].includes(t.type);
-
-                    return (
-                      <motion.div
-                        key={t.id || idx}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="group rounded-xl border border-slate-200 bg-white p-4 transition hover:bg-slate-50"
-                      >
-                        <div className="mb-2 flex items-center justify-between">
-                          <Badge color={positive ? "emerald" : "rose"}>
-                            {positive ? "إيداع" : "سحب"}
-                          </Badge>
-
-                          <div className="text-right">
-                            <p
-                              dir="ltr"
-                              className={`font-mono text-base font-black tabular-nums ${
-                                positive ? "text-emerald-600" : "text-rose-600"
-                              }`}
-                            >
-                              {positive ? "+" : "-"}
-                              {formatMoney(t.amount)}
-                            </p>
-                            <p className="text-xs font-semibold text-slate-500">
-                              {t.currency_code || "USD"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-xs">
-                          <p dir="ltr" className="font-mono text-slate-400">
-                            {t.reference_number || `#${t.id || idx + 1}`}
-                          </p>
-                          <p className="text-slate-500">
-                            {new Date(t.created_at || Date.now()).toLocaleDateString("ar-EG")}
-                          </p>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
+                <div className="space-y-5">
+                  {sections.map((section) => (
+                    <ReportTable key={section.key} title={section.title} rows={section.rows} />
+                  ))}
                 </div>
               )}
-            </div>
-          </motion.div>
-
-          {breakdown.length > 0 && (
-            <motion.div
-              className="overflow-hidden min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.2 }}
-            >
-              <div className="border-b border-slate-200 bg-slate-50/50 px-6 py-4">
-                <h3 className="flex items-center gap-2 text-right text-base font-black text-slate-900">
-                  <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  ملخص التقرير حسب الفئات
-                </h3>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px]">
-                  <thead className="border-b-2 border-slate-100 bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-700">
-                        نوع الحركة
-                      </th>
-                      <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-700">
-                        عدد المعاملات
-                      </th>
-                      <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-700">
-                        إجمالي الإيداعات
-                      </th>
-                      <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-700">
-                        إجمالي السحوبات
-                      </th>
-                      <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-700">
-                        صافي الحركة
-                      </th>
-                      <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-wide text-slate-700">
-                        النسبة من الإجمالي
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-slate-100">
-                    {breakdown.map((b, idx) => (
-                      <motion.tr
-                        key={`${b.type}-${idx}`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="group transition-colors hover:bg-slate-50"
-                      >
-                        <td className="px-6 py-4">
-                          <Badge
-                            color={
-                              b.type === "receive" || b.type === "deposit"
-                                ? "emerald"
-                                : b.type === "send" || b.type === "withdrawal"
-                                  ? "rose"
-                                  : "blue"
-                            }
-                          >
-                            {b.label || getTypeLabel(b.type)}
-                          </Badge>
-                        </td>
-
-                        <td className="px-6 py-4 text-right text-base font-bold text-slate-900">
-                          {b.count || 0}
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <span className="font-mono font-semibold text-emerald-600" dir="ltr">
-                            {formatMoney(b.deposits || 0)} {b.currency || b.currency_code || "USD"}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <span className="font-mono font-semibold text-rose-600" dir="ltr">
-                            {formatMoney(b.withdrawals || 0)} {b.currency || b.currency_code || "USD"}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <span className="font-mono text-base font-black text-slate-900" dir="ltr">
-                            {formatMoney(b.net || 0)} {b.currency || b.currency_code || "USD"}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <span className="text-base font-bold text-slate-700">
-                              {(b.percentage || 0).toFixed(1)}%
-                            </span>
-                            <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all"
-                                style={{ width: `${Math.min(b.percentage || 0, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
+            </>
           )}
-        </>
-      )}
+        </main>
+
+        <aside dir="rtl" className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 bg-white px-5 py-5">
+            <h2 className="text-right text-base font-black text-slate-950">أنواع التقارير</h2>
+          </div>
+
+          <div className="max-h-[720px] space-y-2 overflow-y-auto p-4">
+            {REPORT_TYPES.map((report) => {
+              const Icon = report.icon || FileText;
+              const active = activeReportKey === report.key;
+
+              return (
+                <button
+                  key={report.key}
+                  type="button"
+                  onClick={() => handleReportChange(report.key)}
+                  className={`w-full rounded-2xl border px-4 py-3 text-right transition ${
+                    active
+                      ? "border-teal-500 bg-teal-600 text-white shadow-lg shadow-teal-600/20"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:bg-teal-50/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
+                      active ? "border-white/20 bg-white/15 text-white" : "border-slate-200 bg-slate-50 text-slate-500"
+                    }`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black">{report.label}</p>
+                      <p className={`mt-1 truncate text-xs font-semibold ${active ? "text-teal-100" : "text-slate-400"}`}>
+                        {report.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
 
-function EnhancedStatCard({
-  title,
-  value,
-  currency,
-  icon: Icon,
-  color,
-  change,
-  changeDir,
-  note,
-  isCount = false,
-}) {
-  const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol || "$";
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-right text-xs font-black text-slate-600">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100" />
+        ))}
+      </div>
+
+      <div className="h-96 animate-pulse rounded-2xl bg-slate-100" />
+    </div>
+  );
+}
+
+function StatCard({ card }) {
+  const Icon = card.icon || Activity;
 
   const colorStyles = {
-    emerald: {
-      iconBg: "bg-emerald-50",
-      iconText: "text-emerald-600",
-      border: "hover:border-emerald-300",
-    },
-    rose: {
-      iconBg: "bg-rose-50",
-      iconText: "text-rose-600",
-      border: "hover:border-rose-300",
-    },
-    blue: {
-      iconBg: "bg-blue-50",
-      iconText: "text-blue-600",
-      border: "hover:border-blue-300",
-    },
-    violet: {
-      iconBg: "bg-violet-50",
-      iconText: "text-violet-600",
-      border: "hover:border-violet-300",
-    },
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    rose: "border-rose-200 bg-rose-50 text-rose-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
+    violet: "border-violet-200 bg-violet-50 text-violet-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
   };
-
-  const c = colorStyles[color] || colorStyles.blue;
 
   return (
     <motion.div
-      whileHover={{ y: -4 }}
-      transition={{ duration: 0.2 }}
-      className={`group min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-xl ${c.border}`}
+      whileHover={{ y: -3 }}
+      transition={{ duration: 0.18 }}
+      className="group min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-xl sm:p-6"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 text-right">
-          <p className="truncate text-sm font-bold text-slate-500">{title}</p>
-
-          <div className="mt-5 text-right">
-            <p
-              className="max-w-full truncate font-mono text-2xl font-black tabular-nums text-slate-900 sm:text-3xl"
-              dir="ltr"
-              title={String(isCount ? toNumber(value) : formatMoney(toNumber(value)))}
-            >
-              {isCount ? formatCompactNumber(value) : formatCompactNumber(toNumber(value))}
-              {!isCount && (
-                <span className="mr-1 text-sm font-bold text-slate-500">
-                  {currencySymbol}
-                </span>
-              )}
-            </p>
-          </div>
-
-          <p className="mt-3 text-xs font-medium text-slate-400">{note || currency || ""}</p>
-
-          {change !== undefined && change !== 0 && (
-            <div className="mt-3 flex items-center justify-end gap-1.5">
-              <span className="text-xs text-slate-500">عن الفترة السابقة</span>
-              <span
-                className={`flex items-center gap-1 text-xs font-black ${
-                  changeDir === "up" ? "text-emerald-600" : "text-rose-600"
-                }`}
-              >
-                {changeDir === "up" ? (
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                ) : (
-                  <ArrowDownRight className="h-3.5 w-3.5" />
-                )}
-                {Math.abs(change).toFixed(1)}%
-              </span>
-            </div>
-          )}
+      <div className="flex items-start justify-between gap-4">
+        <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border ${colorStyles[card.color] || colorStyles.blue}`}>
+          <Icon className="h-7 w-7" />
         </div>
 
-        <div
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${c.iconBg} ${c.iconText}`}
-        >
-          <Icon className="h-7 w-7" />
+        <div className="min-w-0 flex-1 text-right">
+          <p className="truncate text-sm font-black text-slate-500">{card.title}</p>
+
+          <p className="mt-5 truncate text-2xl font-black tabular-nums text-slate-950 sm:text-3xl" dir="ltr">
+            {displayCardValue(card)}
+          </p>
+
+          {card.kind === "money" && (
+            <p className="mt-2 text-xs font-bold text-slate-400">USD</p>
+          )}
+
+          {card.note && (
+            <p className="mt-2 truncate text-xs font-bold text-slate-400">{card.note}</p>
+          )}
         </div>
       </div>
     </motion.div>
   );
 }
 
-function BreakdownDonut({ data }) {
-  if (!data || data.length === 0) return <EmptyState title="لا توجد بيانات" />;
+function ReportTable({ title, rows }) {
+  const columns = getColumns(rows);
 
-  const total = data.reduce((a, b) => a + (b.count || 0), 0);
-  const colors = ["#10b981", "#e11d48", "#2563eb", "#f59e0b", "#8b5cf6"];
-  let cumulative = 0;
-
-  const segments = data.map((d, i) => {
-    const pct = total > 0 ? ((d.count || 0) / total) * 100 : 0;
-    const start = cumulative;
-    cumulative += pct;
-    return { ...d, pct, start, color: colors[i % colors.length] };
-  });
+  if (!columns.length) {
+    return <EmptyState icon={FileText} title={`لا توجد بيانات في ${title}`} description="هذا القسم لا يحتوي سجلات قابلة للعرض" />;
+  }
 
   return (
-    <div className="flex items-center gap-6">
-      <div className="relative h-40 w-40 shrink-0">
-        <svg viewBox="0 0 100 100" className="-rotate-90">
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="16" />
-
-          {segments.map((s, i) => {
-            const circ = 2 * Math.PI * 40;
-            const dasharray = `${(s.pct / 100) * circ} ${circ}`;
-            const offset = -((s.start / 100) * circ);
-
-            return (
-              <motion.circle
-                key={i}
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke={s.color}
-                strokeWidth="16"
-                strokeDasharray={dasharray}
-                strokeDashoffset={offset}
-                initial={{ strokeDashoffset: -circ }}
-                animate={{ strokeDashoffset: offset }}
-                transition={{ duration: 1, delay: i * 0.1, ease: "easeOut" }}
-              />
-            );
-          })}
-        </svg>
-
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="text-2xl font-black text-slate-900">{total}</p>
-          <p className="text-xs font-semibold text-slate-500">معاملة</p>
-        </div>
+    <motion.section
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22 }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-6 py-5">
+        <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-black text-slate-600">{rows.length}</span>
+        <h3 className="text-base font-black text-slate-950">{title}</h3>
       </div>
 
-      <div className="flex-1 space-y-3 text-right">
-        {segments.map((s, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="group flex items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-2">
-              <div className="font-mono text-xs font-bold tabular-nums text-slate-700">
-                {s.count}
-              </div>
-              <div className="text-xs font-semibold text-slate-500">
-                ({s.pct.toFixed(1)}%)
-              </div>
-            </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[920px]">
+          <thead className="border-b border-slate-100 bg-white">
+            <tr>
+              {columns.map((column) => (
+                <th key={column} className="px-5 py-4 text-right text-xs font-black text-slate-500">
+                  {labelOf(column)}
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-600 transition-colors group-hover:text-slate-900">
-                {s.label || getTypeLabel(s.type)}
-              </span>
-              <div
-                className="h-3 w-3 rounded-full shadow-sm transition-transform group-hover:scale-110"
-                style={{ background: s.color }}
-              />
-            </div>
-          </motion.div>
-        ))}
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row, index) => (
+              <tr key={row?.id || index} className="transition hover:bg-slate-50">
+                {columns.map((column) => (
+                  <td key={column} className="max-w-[240px] truncate px-5 py-4 text-right text-sm font-bold text-slate-700">
+                    {formatCell(row?.[column], column)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </motion.section>
   );
 }
-
-function DailyChart({ data }) {
-  const chartData = data.slice(0, 14);
-  const values = chartData.map((d) => Number(d.net || d.value || 0));
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const range = max - min || 1;
-
-  return (
-    <div className="relative h-64 w-full">
-      <div className="absolute bottom-0 right-0 top-0 flex flex-col justify-between pr-2 text-xs font-mono text-slate-400">
-        <span>{formatMoney(max)}</span>
-        <span>{formatMoney((max + min) / 2)}</span>
-        <span>{formatMoney(min)}</span>
-      </div>
-
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        className="absolute inset-0 h-full w-full pl-12"
-      >
-        {[0, 25, 50, 75, 100].map((y) => (
-          <line
-            key={y}
-            x1="0"
-            y1={y}
-            x2="100"
-            y2={y}
-            stroke="#f1f5f9"
-            strokeWidth="0.4"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-
-        {chartData.map((d, i) => {
-          const v = Number(d.net || d.value || 0);
-          const normalizedHeight = ((v - min) / range) * 80;
-          const barWidth = 100 / Math.min(14, chartData.length) - 1.5;
-          const x = (i / Math.min(14, chartData.length)) * 100 + 0.75;
-
-          return (
-            <motion.rect
-              key={i}
-              x={x}
-              y={90 - normalizedHeight}
-              width={barWidth}
-              height={normalizedHeight}
-              fill={v >= 0 ? "url(#gradient-positive)" : "url(#gradient-negative)"}
-              rx="1"
-              initial={{ height: 0, y: 90 }}
-              animate={{ height: normalizedHeight, y: 90 - normalizedHeight }}
-              transition={{ duration: 0.6, delay: i * 0.05, ease: "easeOut" }}
-            />
-          );
-        })}
-
-        <motion.polyline
-          points={chartData
-            .map((d, i, arr) => {
-              const x = arr.length > 1 ? (i / (arr.length - 1)) * 100 : 50;
-              const y = 90 - (((Number(d.net || d.value || 0) - min) / range) * 80);
-              return `${x},${y}`;
-            })
-            .join(" ")}
-          fill="none"
-          stroke="#059669"
-          strokeWidth="1"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 1.5, ease: "easeOut" }}
-          vectorEffect="non-scaling-stroke"
-        />
-
-        <defs>
-          <linearGradient id="gradient-positive" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#10b981" stopOpacity="0.05" />
-          </linearGradient>
-
-          <linearGradient id="gradient-negative" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#e11d48" stopOpacity="0.05" />
-            <stop offset="100%" stopColor="#e11d48" stopOpacity="0.3" />
-          </linearGradient>
-        </defs>
-      </svg>
-
-      <div className="absolute bottom-0 left-0 right-0 flex justify-between pl-12 pt-2 text-xs font-mono text-slate-400">
-        {chartData.map((d, i) => {
-          if (i % Math.ceil(chartData.length / 7 || 1) !== 0) return null;
-
-          const date = d.date ? new Date(d.date) : new Date();
-
-          return (
-            <span key={i}>
-              {date.getDate()}/{date.getMonth() + 1}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export default ReportsPage;
