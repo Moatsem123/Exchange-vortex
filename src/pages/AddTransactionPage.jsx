@@ -580,32 +580,6 @@ function AddTransactionPage() {
 
                   {isSupplierFunding ? (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <Field label="العميل" required error={errors.customer || errors.customer_id}>
-                        <SearchDropdown
-                          value={selectedCustomer ? selectedCustomer.name : customerSearch}
-                          placeholder="ابحث عن عميل..."
-                          show={showCustList && !selectedCustomer}
-                          items={filteredCustomers}
-                          icon={UserIcon}
-                          onFocus={() => setShowCustList(true)}
-                          onChange={(value) => {
-                            setCustomerSearch(value);
-                            setCustomerId(null);
-                            setShowCustList(true);
-                          }}
-                          onClear={() => {
-                            setCustomerId(null);
-                            setCustomerSearch("");
-                            setShowCustList(false);
-                          }}
-                          onSelect={(customer) => {
-                            setCustomerId(customer.id);
-                            setCustomerSearch("");
-                            setShowCustList(false);
-                          }}
-                        />
-                      </Field>
-
                       <Field label="المورد" required error={errors.supplier || errors.supplier_id}>
                         <SearchDropdown
                           value={selectedSupplier ? selectedSupplier.name : supplierSearch}
@@ -632,110 +606,6 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="عملة العميل" required error={errors.customer_currency}>
-                        <CurrencySelect
-                          value={customerCurrency}
-                          currencies={currencies}
-                          onChange={(code, rate) => {
-                            setCustomerCurrency(code);
-                            if (rate) setCustomerExchangeRate(String(rate));
-                          }}
-                        />
-                      </Field>
-
-                      <Field label="عملة المورد" required error={errors.supplier_currency}>
-                        <CurrencySelect
-                          value={supplierCurrency}
-                          currencies={currencies}
-                          onChange={(code, rate) => {
-                            setSupplierCurrency(code);
-                            if (rate) setSupplierExchangeRate(String(rate));
-                          }}
-                        />
-                      </Field>
-
-                      <Field label="مبلغ العميل" required error={errors.customer_amount}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={customerAmount}
-                          onChange={(e) => setCustomerAmount(e.target.value)}
-                          placeholder="0.00"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="مبلغ المورد" required error={errors.supplier_amount}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={supplierAmount}
-                          onChange={(e) => setSupplierAmount(e.target.value)}
-                          placeholder="0.00"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="سعر صرف العميل" required error={errors.customer_exchange_rate}>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          value={customerExchangeRate}
-                          onChange={(e) => setCustomerExchangeRate(e.target.value)}
-                          placeholder="1.0000"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="سعر صرف المورد" required error={errors.supplier_exchange_rate}>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          value={supplierExchangeRate}
-                          onChange={(e) => setSupplierExchangeRate(e.target.value)}
-                          placeholder="1.0000"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="التاريخ">
-                        <input
-                          type="date"
-                          value={transactionDate}
-                          onChange={(e) => setTransactionDate(e.target.value)}
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="الوقت">
-                        <input
-                          type="time"
-                          value={transactionTime}
-                          onChange={(e) => setTransactionTime(e.target.value)}
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="حالة العملية">
-                        <StatusSelect value={operationStatus} onChange={setOperationStatus} />
-                      </Field>
-
-                      <Field label="رقم مرجعي">
-                        <input
-                          type="text"
-                          value={referenceNumber}
-                          onChange={(e) => setReferenceNumber(e.target.value)}
-                          placeholder="REF-XXXX"
-                          className="ep-input"
-                        />
-                      </Field>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <Field label="العميل" required error={errors.customer || errors.customer_id}>
                         <SearchDropdown
                           value={selectedCustomer ? selectedCustomer.name : customerSearch}
@@ -762,6 +632,110 @@ function AddTransactionPage() {
                         />
                       </Field>
 
+                      <Field label="مبلغ المورد" required error={errors.supplier_amount}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={supplierAmount}
+                          onChange={(e) => setSupplierAmount(e.target.value)}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="مبلغ العميل" required error={errors.customer_amount}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={customerAmount}
+                          onChange={(e) => setCustomerAmount(e.target.value)}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="عملة المورد" required error={errors.supplier_currency}>
+                        <CurrencySelect
+                          value={supplierCurrency}
+                          currencies={currencies}
+                          onChange={(code, rate) => {
+                            setSupplierCurrency(code);
+                            if (rate) setSupplierExchangeRate(String(rate));
+                          }}
+                        />
+                      </Field>
+
+                      <Field label="عملة العميل" required error={errors.customer_currency}>
+                        <CurrencySelect
+                          value={customerCurrency}
+                          currencies={currencies}
+                          onChange={(code, rate) => {
+                            setCustomerCurrency(code);
+                            if (rate) setCustomerExchangeRate(String(rate));
+                          }}
+                        />
+                      </Field>
+
+                      <Field label="سعر صرف المورد" required error={errors.supplier_exchange_rate}>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={supplierExchangeRate}
+                          onChange={(e) => setSupplierExchangeRate(e.target.value)}
+                          placeholder="1.0000"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="سعر صرف العميل" required error={errors.customer_exchange_rate}>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={customerExchangeRate}
+                          onChange={(e) => setCustomerExchangeRate(e.target.value)}
+                          placeholder="1.0000"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="الوقت">
+                        <input
+                          type="time"
+                          value={transactionTime}
+                          onChange={(e) => setTransactionTime(e.target.value)}
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="التاريخ">
+                        <input
+                          type="date"
+                          value={transactionDate}
+                          onChange={(e) => setTransactionDate(e.target.value)}
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="رقم مرجعي">
+                        <input
+                          type="text"
+                          value={referenceNumber}
+                          onChange={(e) => setReferenceNumber(e.target.value)}
+                          placeholder="REF-XXXX"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="حالة العملية">
+                        <StatusSelect value={operationStatus} onChange={setOperationStatus} />
+                      </Field>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <Field label="نوع الصندوق" required error={errors.box_type}>
                         <BoxTypeSelect
                           value={boxType}
@@ -774,13 +748,28 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="عملة العميل" required error={errors.customer_currency}>
-                        <CurrencySelect
-                          value={customerCurrency}
-                          currencies={currencies}
-                          onChange={(code, rate) => {
-                            setCustomerCurrency(code);
-                            if (rate) setCustomerExchangeRate(String(rate));
+                      <Field label="العميل" required error={errors.customer || errors.customer_id}>
+                        <SearchDropdown
+                          value={selectedCustomer ? selectedCustomer.name : customerSearch}
+                          placeholder="ابحث عن عميل..."
+                          show={showCustList && !selectedCustomer}
+                          items={filteredCustomers}
+                          icon={UserIcon}
+                          onFocus={() => setShowCustList(true)}
+                          onChange={(value) => {
+                            setCustomerSearch(value);
+                            setCustomerId(null);
+                            setShowCustList(true);
+                          }}
+                          onClear={() => {
+                            setCustomerId(null);
+                            setCustomerSearch("");
+                            setShowCustList(false);
+                          }}
+                          onSelect={(customer) => {
+                            setCustomerId(customer.id);
+                            setCustomerSearch("");
+                            setShowCustList(false);
                           }}
                         />
                       </Field>
@@ -827,6 +816,29 @@ function AddTransactionPage() {
                         />
                       </Field>
 
+                      <Field label="مبلغ الصندوق" required error={errors.box_amount}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={boxAmount}
+                          onChange={(e) => setBoxAmount(e.target.value)}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="عملة العميل" required error={errors.customer_currency}>
+                        <CurrencySelect
+                          value={customerCurrency}
+                          currencies={currencies}
+                          onChange={(code, rate) => {
+                            setCustomerCurrency(code);
+                            if (rate) setCustomerExchangeRate(String(rate));
+                          }}
+                        />
+                      </Field>
+
                       <Field label="عملة الصندوق" required error={errors.box_currency}>
                         <CurrencySelect
                           value={boxCurrency}
@@ -850,14 +862,23 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="مبلغ الصندوق" required error={errors.box_amount}>
+                      <Field label="سعر صرف الصندوق" required error={errors.box_exchange_rate}>
                         <input
                           type="number"
-                          step="0.01"
-                          value={boxAmount}
-                          onChange={(e) => setBoxAmount(e.target.value)}
-                          placeholder="0.00"
+                          step="0.0001"
+                          value={boxExchangeRate}
+                          onChange={(e) => setBoxExchangeRate(e.target.value)}
+                          placeholder="1.0000"
                           inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label="الوقت">
+                        <input
+                          type="time"
+                          value={transactionTime}
+                          onChange={(e) => setTransactionTime(e.target.value)}
                           className="ep-input"
                         />
                       </Field>
@@ -871,31 +892,6 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="سعر صرف الصندوق" required error={errors.box_exchange_rate}>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          value={boxExchangeRate}
-                          onChange={(e) => setBoxExchangeRate(e.target.value)}
-                          placeholder="1.0000"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label="حالة العملية">
-                        <StatusSelect value={operationStatus} onChange={setOperationStatus} />
-                      </Field>
-
-                      <Field label="الوقت">
-                        <input
-                          type="time"
-                          value={transactionTime}
-                          onChange={(e) => setTransactionTime(e.target.value)}
-                          className="ep-input"
-                        />
-                      </Field>
-
                       <Field label="رقم مرجعي">
                         <input
                           type="text"
@@ -904,6 +900,10 @@ function AddTransactionPage() {
                           placeholder="REF-XXXX"
                           className="ep-input"
                         />
+                      </Field>
+
+                      <Field label="حالة العملية">
+                        <StatusSelect value={operationStatus} onChange={setOperationStatus} />
                       </Field>
                     </div>
                   )}
