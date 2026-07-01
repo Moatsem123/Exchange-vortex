@@ -132,8 +132,8 @@ const REPORT_TYPES = [
   {
     key: "netWorthReport",
     group: "finance",
-    label: "صافي الثروة",
-    subtitle: "الوضع المالي الحالي",
+    label: "صافي الأرباح",
+    subtitle: "ملخص صافي الأرباح والوضع المالي",
     icon: Database,
     mode: "none",
     service: "netWorthReport",
@@ -167,7 +167,7 @@ const REPORT_GROUPS = [
   {
     key: "finance",
     label: "تقارير مالية",
-    subtitle: "رأس المال، المصروفات، صافي الثروة",
+    subtitle: "رأس المال، المصروفات، صافي الأرباح",
     icon: Wallet,
   },
   {
@@ -240,7 +240,7 @@ function labelOf(key) {
     capital_balance: "رصيد رأس المال",
     free_capital: "رأس المال الحر",
     boxes_total_balance: "إجمالي الصناديق",
-    net_worth: "صافي الثروة",
+    net_worth: "صافي الأرباح",
     currency: "العملة",
     currency_code: "العملة",
     status: "الحالة",
@@ -454,7 +454,7 @@ function buildCards(reportKey, payload = {}) {
 
   if (reportKey === "netWorthReport") {
     return [
-      makeCard("صافي الثروة", payload.net_worth ?? 0, TrendingUp, "emerald"),
+      makeCard("صافي الأرباح", payload.net_worth ?? 0, TrendingUp, "emerald"),
       makeCard("إجمالي الصناديق", payload.boxes_total_balance ?? 0, Wallet, "blue"),
       makeCard("رصيد رأس المال", payload.capital_balance ?? 0, DollarSign, "violet"),
       makeCard("رأس المال الحر", payload.free_capital ?? 0, Database, "amber"),
@@ -658,7 +658,7 @@ export default function ReportsPage() {
       }
 
       setExportJob({ id: jobId, status: "queued" });
-      toast.info("تمت إضافة التقرير إلى قائمة التصدير");
+      toast.info("جاري تجهيز التقرير...");
       pollExport(jobId, 0);
     } catch (err) {
       toast.error(extractApiError(err));
@@ -670,6 +670,7 @@ export default function ReportsPage() {
     if (attempts > 40) {
       toast.error("انتهت مهلة انتظار التصدير");
       setExporting(false);
+      setExportJob(null);
       return;
     }
 
@@ -687,6 +688,7 @@ export default function ReportsPage() {
       if (FAIL_STATUSES.includes(status)) {
         toast.error("فشل تجهيز ملف التصدير");
         setExporting(false);
+        setExportJob(null);
         return;
       }
 
@@ -696,6 +698,7 @@ export default function ReportsPage() {
     } catch (err) {
       toast.error(extractApiError(err));
       setExporting(false);
+      setExportJob(null);
     }
   }
 
@@ -726,6 +729,7 @@ export default function ReportsPage() {
       toast.error(extractApiError(err));
     } finally {
       setExporting(false);
+      setExportJob(null);
     }
   }
 
@@ -764,24 +768,24 @@ export default function ReportsPage() {
               disabled={exporting || loading}
               className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              تصدير PDF
+              {exporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  جاري تجهيز التقرير...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  تصدير PDF
+                </>
+              )}
             </button>
           </div>
         </div>
 
-        {exportJob && (
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <div className="text-right">
-              <p className="text-sm font-black text-amber-900">حالة التصدير: {exportJob.status}</p>
-              <p className="mt-1 text-xs font-bold text-amber-700" dir="ltr">
-                {exportJob.id}
-              </p>
-            </div>
-
-            <Badge color={READY_STATUSES.includes(exportJob.status) ? "emerald" : "amber"}>
-              PDF
-            </Badge>
+        {exporting && (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-right text-sm font-black text-amber-800">
+            جاري تجهيز التقرير...
           </div>
         )}
       </section>
