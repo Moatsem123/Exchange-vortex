@@ -3,12 +3,14 @@ import { motion } from "framer-motion";
 import {
   Activity,
   ArrowDown,
+  BarChart3,
   Calendar,
   ChartNoAxesColumnIncreasing,
   Database,
   DollarSign,
   Download,
   FileText,
+  Layers3,
   Loader2,
   ReceiptText,
   RefreshCw,
@@ -29,6 +31,7 @@ import { extractApiError, formatCompactNumber, formatMoney } from "../shared/hel
 const REPORT_TYPES = [
   {
     key: "daily",
+    group: "movement",
     label: "التقرير اليومي",
     subtitle: "حركة يوم محدد",
     icon: Activity,
@@ -38,6 +41,7 @@ const REPORT_TYPES = [
   },
   {
     key: "monthly",
+    group: "movement",
     label: "التقرير الشهري",
     subtitle: "حركة شهر كامل",
     icon: ChartNoAxesColumnIncreasing,
@@ -46,7 +50,28 @@ const REPORT_TYPES = [
     exportType: "monthly",
   },
   {
+    key: "usersComparison",
+    group: "movement",
+    label: "مقارنة المستخدمين",
+    subtitle: "مقارنة أداء المستخدمين",
+    icon: Users,
+    mode: "range",
+    service: "usersComparison",
+    exportType: "users-comparison",
+  },
+  {
+    key: "profitSummary",
+    group: "profits",
+    label: "ملخص الأرباح",
+    subtitle: "أرباح الفترة المحددة",
+    icon: DollarSign,
+    mode: "range",
+    service: "profitSummary",
+    exportType: "profit-summary",
+  },
+  {
     key: "dailyProfit",
+    group: "profits",
     label: "أرباح يومية",
     subtitle: "صافي ربح يوم محدد",
     icon: TrendingUp,
@@ -56,6 +81,7 @@ const REPORT_TYPES = [
   },
   {
     key: "monthlyProfit",
+    group: "profits",
     label: "أرباح شهرية",
     subtitle: "صافي ربح شهر محدد",
     icon: TrendingUp,
@@ -64,16 +90,8 @@ const REPORT_TYPES = [
     exportType: "monthly-profit",
   },
   {
-    key: "profitSummary",
-    label: "ملخص الأرباح",
-    subtitle: "أرباح الفترة المحددة",
-    icon: DollarSign,
-    mode: "range",
-    service: "profitSummary",
-    exportType: "profit-summary",
-  },
-  {
     key: "profitByUser",
+    group: "profits",
     label: "الأرباح حسب المستخدم",
     subtitle: "تحليل الربح لكل مستخدم",
     icon: Users,
@@ -83,6 +101,7 @@ const REPORT_TYPES = [
   },
   {
     key: "profitBySupplier",
+    group: "profits",
     label: "الأرباح حسب المورد",
     subtitle: "تحليل الربح حسب المورد",
     icon: UserRound,
@@ -91,25 +110,8 @@ const REPORT_TYPES = [
     exportType: "profit-by-supplier",
   },
   {
-    key: "usersComparison",
-    label: "مقارنة المستخدمين",
-    subtitle: "مقارنة أداء المستخدمين",
-    icon: Users,
-    mode: "range",
-    service: "usersComparison",
-    exportType: "users-comparison",
-  },
-  {
-    key: "customerStatement",
-    label: "كشف حساب عميل",
-    subtitle: "كشف حركة عميل محدد",
-    icon: FileText,
-    mode: "customerRange",
-    service: "customerStatement",
-    exportType: "statement",
-  },
-  {
     key: "capitalReport",
+    group: "finance",
     label: "تقرير رأس المال",
     subtitle: "حركة رأس المال",
     icon: Wallet,
@@ -119,6 +121,7 @@ const REPORT_TYPES = [
   },
   {
     key: "expenseReport",
+    group: "finance",
     label: "تقرير المصروفات",
     subtitle: "مصروفات الفترة",
     icon: ReceiptText,
@@ -128,12 +131,50 @@ const REPORT_TYPES = [
   },
   {
     key: "netWorthReport",
+    group: "finance",
     label: "صافي الثروة",
     subtitle: "الوضع المالي الحالي",
     icon: Database,
     mode: "none",
     service: "netWorthReport",
     exportType: "net-worth-report",
+  },
+  {
+    key: "customerStatement",
+    group: "statement",
+    label: "كشف حساب عميل",
+    subtitle: "كشف حركة عميل محدد",
+    icon: FileText,
+    mode: "customerRange",
+    service: "customerStatement",
+    exportType: "statement",
+  },
+];
+
+const REPORT_GROUPS = [
+  {
+    key: "movement",
+    label: "تقارير الحركة",
+    subtitle: "اليومي، الشهري، ومقارنة المستخدمين",
+    icon: BarChart3,
+  },
+  {
+    key: "profits",
+    label: "تقارير الأرباح",
+    subtitle: "ملخص، يومي، شهري، حسب المستخدم والمورد",
+    icon: TrendingUp,
+  },
+  {
+    key: "finance",
+    label: "تقارير مالية",
+    subtitle: "رأس المال، المصروفات، صافي الثروة",
+    icon: Wallet,
+  },
+  {
+    key: "statement",
+    label: "كشف الحساب",
+    subtitle: "كشف حساب عميل محدد",
+    icon: FileText,
   },
 ];
 
@@ -395,7 +436,17 @@ function buildCards(reportKey, payload = {}) {
   if (reportKey === "expenseReport") {
     return [
       makeCard("إجمالي المصروفات", payload.total_expenses ?? payload.expenses_total ?? 0, ReceiptText, "rose"),
-      makeCard("عدد المصروفات", Array.isArray(payload.expenses) ? payload.expenses.length : Array.isArray(payload.rows) ? payload.rows.length : payload.count ?? 0, Activity, "violet", "count"),
+      makeCard(
+        "عدد المصروفات",
+        Array.isArray(payload.expenses)
+          ? payload.expenses.length
+          : Array.isArray(payload.rows)
+            ? payload.rows.length
+            : payload.count ?? 0,
+        Activity,
+        "violet",
+        "count"
+      ),
       makeCard("من تاريخ", payload.date_from || "—", Calendar, "blue", "text"),
       makeCard("إلى تاريخ", payload.date_to || "—", Calendar, "amber", "text"),
     ];
@@ -415,7 +466,17 @@ function buildCards(reportKey, payload = {}) {
       makeCard("إجمالي الداخل", payload.total_receive ?? payload.receive ?? totals.receive ?? 0, DollarSign, "emerald"),
       makeCard("إجمالي الخارج", payload.total_send ?? payload.send ?? totals.send ?? 0, ArrowDown, "rose"),
       makeCard("الرصيد / الصافي", payload.balance ?? payload.net ?? totals.net ?? 0, TrendingUp, "blue"),
-      makeCard("عدد السجلات", Array.isArray(payload.transactions) ? payload.transactions.length : Array.isArray(payload.rows) ? payload.rows.length : payload.count ?? 0, Activity, "violet", "count"),
+      makeCard(
+        "عدد السجلات",
+        Array.isArray(payload.transactions)
+          ? payload.transactions.length
+          : Array.isArray(payload.rows)
+            ? payload.rows.length
+            : payload.count ?? 0,
+        Activity,
+        "violet",
+        "count"
+      ),
     ];
   }
 
@@ -456,6 +517,7 @@ export default function ReportsPage() {
   const currentMonth = getCurrentMonth();
   const pollTimerRef = useRef(null);
 
+  const [activeGroupKey, setActiveGroupKey] = useState("movement");
   const [activeReportKey, setActiveReportKey] = useState("daily");
   const [date, setDate] = useState(today);
   const [month, setMonth] = useState(currentMonth);
@@ -474,10 +536,21 @@ export default function ReportsPage() {
     [activeReportKey]
   );
 
+  const activeGroup = useMemo(
+    () => REPORT_GROUPS.find((item) => item.key === activeGroupKey) || REPORT_GROUPS[0],
+    [activeGroupKey]
+  );
+
+  const groupReports = useMemo(
+    () => REPORT_TYPES.filter((item) => item.group === activeGroupKey),
+    [activeGroupKey]
+  );
+
   const cards = useMemo(() => buildCards(activeReportKey, payload || {}), [activeReportKey, payload]);
   const sections = useMemo(() => getTableSections(payload || {}), [payload]);
   const infoItems = useMemo(() => getInfoItems(payload || {}), [payload]);
   const ActiveIcon = activeReport.icon || FileText;
+  const ActiveGroupIcon = activeGroup.icon || Layers3;
 
   function buildParams(report = activeReport) {
     if (report.mode === "date") return { date };
@@ -532,8 +605,18 @@ export default function ReportsPage() {
     };
   }, [activeReportKey]);
 
-  function handleReportChange(key) {
-    setActiveReportKey(key);
+  function handleGroupChange(groupKey) {
+    const firstReport = REPORT_TYPES.find((item) => item.group === groupKey);
+
+    setActiveGroupKey(groupKey);
+    setActiveReportKey(firstReport?.key || "daily");
+    setPayload(null);
+    setError(null);
+    setExportJob(null);
+  }
+
+  function handleReportChange(reportKey) {
+    setActiveReportKey(reportKey);
     setPayload(null);
     setError(null);
     setExportJob(null);
@@ -648,8 +731,8 @@ export default function ReportsPage() {
 
   return (
     <div className="min-h-screen space-y-6 bg-slate-50 pb-8" dir="rtl">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700 shadow-sm">
               <ChartNoAxesColumnIncreasing className="h-7 w-7" />
@@ -670,7 +753,7 @@ export default function ReportsPage() {
               type="button"
               onClick={load}
               disabled={loading}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
@@ -679,7 +762,7 @@ export default function ReportsPage() {
               type="button"
               onClick={handleExportPdf}
               disabled={exporting || loading}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               تصدير PDF
@@ -691,7 +774,9 @@ export default function ReportsPage() {
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
             <div className="text-right">
               <p className="text-sm font-black text-amber-900">حالة التصدير: {exportJob.status}</p>
-              <p className="mt-1 text-xs font-bold text-amber-700" dir="ltr">{exportJob.id}</p>
+              <p className="mt-1 text-xs font-bold text-amber-700" dir="ltr">
+                {exportJob.id}
+              </p>
             </div>
 
             <Badge color={READY_STATUSES.includes(exportJob.status) ? "emerald" : "amber"}>
@@ -701,179 +786,245 @@ export default function ReportsPage() {
         )}
       </section>
 
-      <div dir="ltr" className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
-        <main dir="rtl" className="min-w-0 space-y-5">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700">
-                  <ActiveIcon className="h-7 w-7" />
-                </div>
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {REPORT_GROUPS.map((group) => {
+          const Icon = group.icon || Layers3;
+          const active = group.key === activeGroupKey;
 
-                <div className="text-right">
-                  <h2 className="text-xl font-black text-slate-950">{activeReport.label}</h2>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">{activeReport.subtitle}</p>
-                </div>
-              </div>
-
-              <Badge color="teal">{getModeLabel(activeReport.mode)}</Badge>
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-end gap-3">
-              {activeReport.mode === "date" && (
-                <Field label="التاريخ">
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="ep-input h-11 w-48" />
-                </Field>
-              )}
-
-              {activeReport.mode === "month" && (
-                <Field label="الشهر">
-                  <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="ep-input h-11 w-48" />
-                </Field>
-              )}
-
-              {(activeReport.mode === "range" || activeReport.mode === "customerRange") && (
-                <>
-                  <Field label="من تاريخ">
-                    <input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => {
-                        setDateFrom(e.target.value);
-                        if (dateTo < e.target.value) setDateTo(e.target.value);
-                      }}
-                      className="ep-input h-11 w-48"
-                    />
-                  </Field>
-
-                  <Field label="إلى تاريخ">
-                    <input type="date" min={dateFrom} value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="ep-input h-11 w-48" />
-                  </Field>
-                </>
-              )}
-
-              {activeReport.mode === "customerRange" && (
-                <Field label="رقم العميل">
-                  <input
-                    type="number"
-                    min="1"
-                    value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
-                    className="ep-input h-11 w-48"
-                    placeholder="مثال: 1"
-                  />
-                </Field>
-              )}
-
-              <button
-                type="button"
-                onClick={load}
-                disabled={loading}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-teal-700 px-6 text-sm font-black text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                عرض التقرير
-              </button>
-            </div>
-          </section>
-
-          {error && !loading ? (
-            <ErrorState title="تعذّر تحميل التقرير" description={extractApiError(error)} onRetry={load} />
-          ) : loading ? (
-            <LoadingState />
-          ) : activeReport.mode === "customerRange" && !customerId.trim() ? (
-            <EmptyState icon={UserRound} title="أدخل رقم العميل" description="اكتب رقم العميل ثم اضغط عرض التقرير" />
-          ) : !payload ? (
-            <EmptyState icon={FileText} title="لا توجد بيانات" description="لا توجد بيانات لهذا التقرير حسب الفلاتر الحالية" />
-          ) : (
-            <>
-              <section className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
-                {cards.map((card) => (
-                  <StatCard key={card.title} card={card} />
-                ))}
-              </section>
-
-              {infoItems.length > 0 && (
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-                  <div className="mb-5 flex items-center justify-between">
-                    <span className="h-2.5 w-2.5 rounded-full bg-teal-600" />
-                    <h3 className="text-base font-black text-slate-950">ملخص التقرير</h3>
-                  </div>
-
-                  <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-                    {infoItems.map((item) => (
-                      <div key={item.key} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-right">
-                        <p className="text-xs font-black text-slate-500">{item.label}</p>
-                        <p className="mt-2 truncate text-base font-black text-slate-950">
-                          {item.key === "generated_at" ? formatDateTime(item.value) : formatCell(item.value, item.key)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {sections.length === 0 ? (
-                <EmptyState icon={FileText} title="لا توجد سجلات تفصيلية" description="القيم الحالية ظاهرة في البطاقات وملخص التقرير" />
-              ) : (
-                <div className="space-y-5">
-                  {sections.map((section) => (
-                    <ReportTable key={section.key} title={section.title} rows={section.rows} />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </main>
-
-        <aside dir="rtl" className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 bg-white px-5 py-5">
-            <h2 className="text-right text-base font-black text-slate-950">أنواع التقارير</h2>
-          </div>
-
-          <div className="max-h-[720px] space-y-2 overflow-y-auto p-4">
-            {REPORT_TYPES.map((report) => {
-              const Icon = report.icon || FileText;
-              const active = activeReportKey === report.key;
-
-              return (
-                <button
-                  key={report.key}
-                  type="button"
-                  onClick={() => handleReportChange(report.key)}
-                  className={`w-full rounded-2xl border px-4 py-3 text-right transition ${
-                    active
-                      ? "border-teal-500 bg-teal-600 text-white shadow-lg shadow-teal-600/20"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:bg-teal-50/50"
+          return (
+            <button
+              key={group.key}
+              type="button"
+              onClick={() => handleGroupChange(group.key)}
+              className={`rounded-3xl border p-5 text-right transition ${
+                active
+                  ? "border-teal-500 bg-teal-600 text-white shadow-lg shadow-teal-600/20"
+                  : "border-slate-200 bg-white text-slate-700 shadow-sm hover:border-teal-200 hover:bg-teal-50"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${
+                    active ? "border-white/20 bg-white/15 text-white" : "border-slate-200 bg-slate-50 text-teal-700"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
-                      active ? "border-white/20 bg-white/15 text-white" : "border-slate-200 bg-slate-50 text-slate-500"
-                    }`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
+                  <Icon className="h-6 w-6" />
+                </div>
 
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-black">{report.label}</p>
-                      <p className={`mt-1 truncate text-xs font-semibold ${active ? "text-teal-100" : "text-slate-400"}`}>
-                        {report.subtitle}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-black">{group.label}</p>
+                  <p className={`mt-1 text-xs font-semibold ${active ? "text-teal-100" : "text-slate-400"}`}>
+                    {group.subtitle}
+                  </p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700">
+              <ActiveGroupIcon className="h-6 w-6" />
+            </div>
+
+            <div className="text-right">
+              <h2 className="text-lg font-black text-slate-950">{activeGroup.label}</h2>
+              <p className="mt-1 text-xs font-semibold text-slate-500">{activeGroup.subtitle}</p>
+            </div>
+          </div>
+
+          <Badge color="teal">{groupReports.length} تقارير</Badge>
+        </div>
+
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3">
+          {groupReports.map((report) => {
+            const Icon = report.icon || FileText;
+            const active = report.key === activeReportKey;
+
+            return (
+              <button
+                key={report.key}
+                type="button"
+                onClick={() => handleReportChange(report.key)}
+                className={`rounded-2xl border p-4 text-right transition ${
+                  active
+                    ? "border-teal-400 bg-teal-50 text-teal-900 ring-2 ring-teal-100"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
+                      active ? "border-teal-200 bg-white text-teal-700" : "border-slate-200 bg-slate-50 text-slate-500"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-black">{report.label}</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-slate-400">{report.subtitle}</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <main className="min-w-0 space-y-5">
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700">
+                <ActiveIcon className="h-7 w-7" />
+              </div>
+
+              <div className="text-right">
+                <h2 className="text-xl font-black text-slate-950">{activeReport.label}</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{activeReport.subtitle}</p>
+              </div>
+            </div>
+
+            <Badge color="teal">{getModeLabel(activeReport.mode)}</Badge>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-end gap-3">
+            {activeReport.mode === "date" && (
+              <Field label="التاريخ">
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="ep-input h-11 w-full min-w-[190px]"
+                />
+              </Field>
+            )}
+
+            {activeReport.mode === "month" && (
+              <Field label="الشهر">
+                <input
+                  type="month"
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  className="ep-input h-11 w-full min-w-[190px]"
+                />
+              </Field>
+            )}
+
+            {(activeReport.mode === "range" || activeReport.mode === "customerRange") && (
+              <>
+                <Field label="من تاريخ">
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => {
+                      setDateFrom(e.target.value);
+                      if (dateTo < e.target.value) setDateTo(e.target.value);
+                    }}
+                    className="ep-input h-11 w-full min-w-[190px]"
+                  />
+                </Field>
+
+                <Field label="إلى تاريخ">
+                  <input
+                    type="date"
+                    min={dateFrom}
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="ep-input h-11 w-full min-w-[190px]"
+                  />
+                </Field>
+              </>
+            )}
+
+            {activeReport.mode === "customerRange" && (
+              <Field label="رقم العميل">
+                <input
+                  type="number"
+                  min="1"
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  className="ep-input h-11 w-full min-w-[190px]"
+                  placeholder="مثال: 1"
+                />
+              </Field>
+            )}
+
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-teal-700 px-6 text-sm font-black text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              عرض التقرير
+            </button>
+          </div>
+        </section>
+
+        {error && !loading ? (
+          <ErrorState title="تعذّر تحميل التقرير" description={extractApiError(error)} onRetry={load} />
+        ) : loading ? (
+          <LoadingState />
+        ) : activeReport.mode === "customerRange" && !customerId.trim() ? (
+          <EmptyState icon={UserRound} title="أدخل رقم العميل" description="اكتب رقم العميل ثم اضغط عرض التقرير" />
+        ) : !payload ? (
+          <EmptyState icon={FileText} title="لا توجد بيانات" description="لا توجد بيانات لهذا التقرير حسب الفلاتر الحالية" />
+        ) : (
+          <>
+            <section className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
+              {cards.map((card) => (
+                <StatCard key={card.title} card={card} />
+              ))}
+            </section>
+
+            {infoItems.length > 0 && (
+              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5 flex items-center justify-between">
+                  <span className="h-2.5 w-2.5 rounded-full bg-teal-600" />
+                  <h3 className="text-base font-black text-slate-950">ملخص التقرير</h3>
+                </div>
+
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+                  {infoItems.map((item) => (
+                    <div key={item.key} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-right">
+                      <p className="text-xs font-black text-slate-500">{item.label}</p>
+                      <p className="mt-2 truncate text-base font-black text-slate-950">
+                        {item.key === "generated_at" ? formatDateTime(item.value) : formatCell(item.value, item.key)}
                       </p>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-      </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {sections.length === 0 ? (
+              <EmptyState
+                icon={FileText}
+                title="لا توجد سجلات تفصيلية"
+                description="الـ API رجّع القيم الحالية بدون معاملات أو صفوف تفصيلية"
+              />
+            ) : (
+              <div className="space-y-5">
+                {sections.map((section) => (
+                  <ReportTable key={section.key} title={section.title} rows={section.rows} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </main>
     </div>
   );
 }
 
 function Field({ label, children }) {
   return (
-    <label className="block">
+    <label className="block min-w-[190px] flex-1 sm:flex-none">
       <span className="mb-2 block text-right text-xs font-black text-slate-600">{label}</span>
       {children}
     </label>
@@ -885,11 +1036,11 @@ function LoadingState() {
     <div className="space-y-5">
       <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100" />
+          <div key={i} className="h-36 animate-pulse rounded-3xl bg-slate-100" />
         ))}
       </div>
 
-      <div className="h-96 animate-pulse rounded-2xl bg-slate-100" />
+      <div className="h-96 animate-pulse rounded-3xl bg-slate-100" />
     </div>
   );
 }
@@ -909,7 +1060,7 @@ function StatCard({ card }) {
     <motion.div
       whileHover={{ y: -3 }}
       transition={{ duration: 0.18 }}
-      className="group min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-xl sm:p-6"
+      className="group min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-xl sm:p-6"
     >
       <div className="flex items-start justify-between gap-4">
         <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border ${colorStyles[card.color] || colorStyles.blue}`}>
@@ -923,13 +1074,9 @@ function StatCard({ card }) {
             {displayCardValue(card)}
           </p>
 
-          {card.kind === "money" && (
-            <p className="mt-2 text-xs font-bold text-slate-400">USD</p>
-          )}
+          {card.kind === "money" && <p className="mt-2 text-xs font-bold text-slate-400">USD</p>}
 
-          {card.note && (
-            <p className="mt-2 truncate text-xs font-bold text-slate-400">{card.note}</p>
-          )}
+          {card.note && <p className="mt-2 truncate text-xs font-bold text-slate-400">{card.note}</p>}
         </div>
       </div>
     </motion.div>
@@ -945,7 +1092,7 @@ function ReportTable({ title, rows }) {
 
   return (
     <motion.section
-      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22 }}
