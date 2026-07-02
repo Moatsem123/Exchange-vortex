@@ -11,6 +11,7 @@ import {
   History,
   Loader2,
   Activity,
+  Calculator,
 } from "lucide-react";
 
 import EmptyState from "../shared/EmptyState";
@@ -19,39 +20,36 @@ import Badge from "../shared/Badge";
 import Pagination from "../shared/Pagination";
 import { useToast } from "../shared/Toast";
 import reconciliationService from "../services/reconciliation";
-import { extractApiError, formatDate, formatMoney, unwrapList } from "../shared/helpers";
+import { extractApiError, formatDate, formatMoney } from "../shared/helpers";
 
 const PER_PAGE = 20;
 
 function unwrapPayload(res) {
-  const data = res?.data || res || {};
-  return data?.data || data || {};
+  const data = res?.data ?? res ?? {};
+  return data?.data ?? data ?? {};
 }
 
 function normalizeHistory(res) {
-  const normalized = unwrapList(res);
+  const payload = res ?? {};
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.data?.data)
+        ? payload.data.data
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : [];
 
-  if (Array.isArray(normalized)) {
-    return {
-      items: normalized,
-      meta: {
-        total: normalized.length,
-        current_page: 1,
-        last_page: 1,
-        per_page: PER_PAGE,
-      },
-    };
-  }
-
-  return {
-    items: normalized.items || normalized.data || res?.data || [],
-    meta: normalized.meta || res?.meta || {
-      total: normalized.items?.length || 0,
+  const meta = payload?.meta ||
+    payload?.data?.meta || {
+      total: items.length,
       current_page: 1,
       last_page: 1,
       per_page: PER_PAGE,
-    },
-  };
+    };
+
+  return { items, meta };
 }
 
 function numberFrom(data, keys, fallback = 0) {
@@ -65,33 +63,32 @@ function numberFrom(data, keys, fallback = 0) {
   return fallback;
 }
 
+function getCapital(data) {
+  return numberFrom(data, ["capital_balance", "capital", "total_capital"]);
+}
+
+function getFreeCapital(data) {
+  return numberFrom(data, ["free_capital", "free_balance_usd", "free_balance"]);
+}
+
+function getBoxesTotal(data) {
+  return numberFrom(data, ["boxes_total_balance", "boxes_balance", "total_boxes_balance"]);
+}
+
+function getActualCapital(data) {
+  return getFreeCapital(data) + getBoxesTotal(data);
+}
+
+function getDifference(data) {
+  return getCapital(data) - getActualCapital(data);
+}
+
 function getSnapshotDate(item) {
   return item?.created_at || item?.checked_at || item?.run_at || item?.reconciled_at || item?.updated_at || null;
 }
 
-function getDifference(data) {
-  const direct = data?.difference ?? data?.diff ?? data?.reconciliation_difference;
-
-  if (direct !== undefined && direct !== null) {
-    const value = Number(direct);
-    return Number.isFinite(value) ? value : 0;
-  }
-
-  const capital = numberFrom(data, ["capital_balance", "capital", "total_capital"]);
-  const boxes = numberFrom(data, ["boxes_total_balance", "boxes_balance", "total_boxes_balance"]);
-  const free = numberFrom(data, ["free_capital", "free_balance_usd", "free_balance"]);
-
-  return capital - (boxes + free);
-}
-
 function getSnapshotStatus(item) {
-  const difference = getDifference(item);
-  const rawStatus = String(item?.status || item?.state || "").toLowerCase();
-
-  if (rawStatus.includes("balanced") || rawStatus.includes("متوازن")) return "balanced";
-  if (rawStatus.includes("mismatch") || rawStatus.includes("غير") || rawStatus.includes("فرق")) return "mismatch";
-
-  return Math.abs(difference) < 0.01 ? "balanced" : "mismatch";
+  return Math.abs(getDifference(item)) < 0.01 ? "balanced" : "mismatch";
 }
 
 function getStatusMeta(status) {
@@ -171,19 +168,15 @@ export default function ReconciliationPage() {
     }
   }, [page]);
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     await Promise.all([loadSummary(), loadHistory()]);
     setLoading(false);
-  }
+  }, [loadSummary, loadHistory]);
 
   useEffect(() => {
     loadAll();
-  }, []);
-
-  useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+  }, [loadAll]);
 
   async function runReconciliation() {
     setRunning(true);
@@ -194,6 +187,7 @@ export default function ReconciliationPage() {
       const status = getSnapshotStatus(data);
 
       toast.success(status === "balanced" ? "تمت التسوية والنظام متوازن" : "تم تشغيل التسوية ويوجد فرق");
+      setPage(1);
       await loadAll();
     } catch (err) {
       toast.error(extractApiError(err));
@@ -204,9 +198,10 @@ export default function ReconciliationPage() {
 
   const current = summary || {};
 
-  const capitalBalance = numberFrom(current, ["capital_balance", "capital", "total_capital"]);
-  const boxesTotalBalance = numberFrom(current, ["boxes_total_balance", "boxes_balance", "total_boxes_balance"]);
-  const freeCapital = numberFrom(current, ["free_capital", "free_balance_usd", "free_balance"]);
+  const capitalBalance = getCapital(current);
+  const freeCapital = getFreeCapital(current);
+  const boxesTotalBalance = getBoxesTotal(current);
+  const actualCapital = getActualCapital(current);
   const difference = getDifference(current);
   const status = getSnapshotStatus(current);
   const statusMeta = getStatusMeta(status);
@@ -229,9 +224,10 @@ export default function ReconciliationPage() {
         String(item?.notes || "").toLowerCase().includes(term) ||
         String(userName || "").toLowerCase().includes(term) ||
         String(rowDate || "").toLowerCase().includes(term) ||
-        String(numberFrom(item, ["capital_balance", "capital", "total_capital"])).includes(term) ||
-        String(numberFrom(item, ["free_capital", "free_balance_usd", "free_balance"])).includes(term) ||
-        String(numberFrom(item, ["boxes_total_balance", "boxes_balance", "total_boxes_balance"])).includes(term) ||
+        String(getCapital(item)).includes(term) ||
+        String(getFreeCapital(item)).includes(term) ||
+        String(getBoxesTotal(item)).includes(term) ||
+        String(getActualCapital(item)).includes(term) ||
         String(getDifference(item)).includes(term)
       );
     });
@@ -288,7 +284,7 @@ export default function ReconciliationPage() {
         />
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <MoneyCard
               title="رأس المال"
               value={capitalBalance}
@@ -311,6 +307,13 @@ export default function ReconciliationPage() {
             />
 
             <MoneyCard
+              title="رأس المال الكلي الفعلي"
+              value={actualCapital}
+              icon={Calculator}
+              color="blue"
+            />
+
+            <MoneyCard
               title="فرق التسوية"
               value={difference}
               icon={Activity}
@@ -318,7 +321,7 @@ export default function ReconciliationPage() {
             />
           </section>
 
-          <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_340px]">
+          <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_360px]">
             <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
@@ -326,17 +329,20 @@ export default function ReconciliationPage() {
                 <div className="min-w-0 text-right">
                   <h3 className="text-base font-black text-slate-900">معادلة التسوية</h3>
                   <p className="mt-1 text-xs leading-6 text-slate-500">
-                    الفرق = رأس المال - (رأس المال الحر + أرصدة الصناديق)
+                    فرق التسوية = رأس المال - (رأس المال الحر + أرصدة الصناديق)
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <FormulaBox label="رأس المال" value={capitalBalance} color="emerald" />
                 <FormulaBox label="رأس المال الحر" value={freeCapital} color="teal" />
                 <FormulaBox label="الصناديق" value={boxesTotalBalance} color="violet" />
+                <FormulaBox label="الكلي الفعلي" value={actualCapital} color="blue" />
                 <FormulaBox label="الفرق" value={difference} color={status === "balanced" ? "emerald" : "rose"} />
               </div>
+
+             
             </div>
 
             <div
@@ -370,6 +376,18 @@ export default function ReconciliationPage() {
                     {statusMeta.description}
                   </p>
                 </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl bg-white/70 p-4 text-right">
+                <p className="text-xs font-black text-slate-500">فرق التسوية الحالي</p>
+                <p
+                  dir="ltr"
+                  className={`mt-2 font-mono text-2xl font-black ${
+                    status === "balanced" ? "text-emerald-700" : "text-rose-700"
+                  }`}
+                >
+                  ${formatMoney(difference)}
+                </p>
               </div>
             </div>
           </section>
@@ -425,13 +443,14 @@ export default function ReconciliationPage() {
             ) : (
               <>
                 <div className="max-w-full overflow-x-auto">
-                  <table className="ep-table min-w-[820px]">
+                  <table className="ep-table min-w-[980px]">
                     <thead>
                       <tr>
                         <th>الحالة</th>
                         <th>رأس المال</th>
                         <th>رأس المال الحر</th>
                         <th>الصناديق</th>
+                        <th>الكلي الفعلي</th>
                         <th>الفرق</th>
                         <th>التاريخ</th>
                         <th>المستخدم</th>
@@ -442,9 +461,10 @@ export default function ReconciliationPage() {
                       {filteredHistory.map((item) => {
                         const rowStatus = getSnapshotStatus(item);
                         const rowMeta = getStatusMeta(rowStatus);
-                        const rowCapital = numberFrom(item, ["capital_balance", "capital", "total_capital"]);
-                        const rowFree = numberFrom(item, ["free_capital", "free_balance_usd", "free_balance"]);
-                        const rowBoxes = numberFrom(item, ["boxes_total_balance", "boxes_balance", "total_boxes_balance"]);
+                        const rowCapital = getCapital(item);
+                        const rowFree = getFreeCapital(item);
+                        const rowBoxes = getBoxesTotal(item);
+                        const rowActual = getActualCapital(item);
                         const rowDifference = getDifference(item);
 
                         return (
@@ -463,6 +483,10 @@ export default function ReconciliationPage() {
 
                             <td dir="ltr" className="font-mono font-bold text-slate-700">
                               {formatMoney(rowBoxes)}
+                            </td>
+
+                            <td dir="ltr" className="font-mono font-bold text-slate-700">
+                              {formatMoney(rowActual)}
                             </td>
 
                             <td
@@ -508,6 +532,7 @@ function MoneyCard({ title, value, icon: Icon, color }) {
     teal: "border-teal-200 bg-teal-50 text-teal-700",
     violet: "border-violet-200 bg-violet-50 text-violet-700",
     rose: "border-rose-200 bg-rose-50 text-rose-700",
+    blue: "border-sky-200 bg-sky-50 text-sky-700",
   };
 
   return (
@@ -521,7 +546,9 @@ function MoneyCard({ title, value, icon: Icon, color }) {
           <p className="text-xs font-black text-slate-500 sm:text-sm">{title}</p>
           <p
             dir="ltr"
-            className="mt-4 break-words font-mono text-2xl font-black leading-tight text-slate-950 sm:text-3xl"
+            className={`mt-4 break-words font-mono text-2xl font-black leading-tight sm:text-3xl ${
+              Number(value || 0) < 0 ? "text-rose-700" : "text-slate-950"
+            }`}
           >
             ${formatMoney(Number(value || 0))}
           </p>
@@ -537,6 +564,7 @@ function FormulaBox({ label, value, color }) {
     teal: "border-teal-200 bg-teal-50 text-teal-800",
     violet: "border-violet-200 bg-violet-50 text-violet-800",
     rose: "border-rose-200 bg-rose-50 text-rose-800",
+    blue: "border-sky-200 bg-sky-50 text-sky-800",
   };
 
   return (

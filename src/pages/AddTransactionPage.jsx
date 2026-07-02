@@ -11,8 +11,6 @@ import {
   Loader2,
   FileText,
   Percent,
-  Plus,
-  Minus,
   User as UserIcon,
   Wallet,
   Building2,
@@ -84,6 +82,11 @@ function normalizeList(res) {
   return [];
 }
 
+function numberValue(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function AddTransactionPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -138,7 +141,7 @@ function AddTransactionPage() {
   const [operationStatus, setOperationStatus] = useState("pending");
 
   const [commissionMode, setCommissionMode] = useState("none");
-  const [commissionType, setCommissionType] = useState("fixed");
+  const [commissionType, setCommissionType] = useState("percentage");
   const [commissionValue, setCommissionValue] = useState("");
 
   const [note, setNote] = useState("");
@@ -253,33 +256,46 @@ function AddTransactionPage() {
   const activeCurrency = isTransfer ? transferCurrency : customerCurrency;
   const activeExchangeRate = isTransfer ? transferExchangeRate : customerExchangeRate;
 
+  const sourceAmount = useMemo(() => {
+    if (isTransfer) return transferAmount;
+    if (isSupplierFunding) return supplierAmount;
+    if (isBoxFunding) return boxAmount;
+    return "";
+  }, [isTransfer, isSupplierFunding, isBoxFunding, transferAmount, supplierAmount, boxAmount]);
+
+  const sourceCurrency = useMemo(() => {
+    if (isTransfer) return transferCurrency;
+    if (isSupplierFunding) return supplierCurrency;
+    if (isBoxFunding) return boxCurrency;
+    return activeCurrency;
+  }, [isTransfer, isSupplierFunding, isBoxFunding, transferCurrency, supplierCurrency, boxCurrency, activeCurrency]);
+
   const computed = useMemo(() => {
-    const parsedAmount = parseFloat(activeAmount) || 0;
-    const parsedRate = parseFloat(activeExchangeRate) || 1;
-    const parsedCommission = parseFloat(commissionValue) || 0;
+    const parsedAmount = numberValue(activeAmount);
+    const parsedRate = numberValue(activeExchangeRate) || 1;
+    const parsedCommission = numberValue(commissionValue);
 
     let commissionAmount = 0;
 
-    if (commissionMode !== "none" && parsedCommission > 0) {
+    if (commissionMode === "apply" && parsedCommission > 0) {
       commissionAmount =
-        commissionType === "percentage" ? (parsedAmount * parsedCommission) / 100 : parsedCommission;
+        commissionType === "percentage"
+          ? (parsedAmount * parsedCommission) / 100
+          : parsedCommission;
     }
 
-    const final =
-      commissionMode === "subtract"
-        ? parsedAmount - commissionAmount
-        : commissionMode === "add"
-          ? parsedAmount + commissionAmount
-          : parsedAmount;
-
+    const final = Math.max(parsedAmount - commissionAmount, 0);
     const usd = final / parsedRate;
 
     return {
-      commAmount: commissionAmount,
+      baseAmount: parsedAmount,
+      sourceAmount: numberValue(sourceAmount),
+      commissionAmount,
       final,
       usd,
+      rate: parsedRate,
     };
-  }, [activeAmount, activeExchangeRate, commissionMode, commissionType, commissionValue]);
+  }, [activeAmount, activeExchangeRate, commissionMode, commissionType, commissionValue, sourceAmount]);
 
   function validate() {
     const validationErrors = {};
@@ -340,6 +356,16 @@ function AddTransactionPage() {
       }
     }
 
+    if (commissionMode === "apply") {
+      if (!commissionValue || Number(commissionValue) <= 0) {
+        validationErrors.commission = "أدخل قيمة العمولة";
+      }
+
+      if (Number(commissionValue) > 0 && computed.final <= 0) {
+        validationErrors.commission = "العمولة لا يمكن أن تكون أكبر أو تساوي مبلغ العميل";
+      }
+    }
+
     setErrors(validationErrors);
     return Object.keys(validationErrors).length === 0;
   }
@@ -353,6 +379,8 @@ function AddTransactionPage() {
         referenceNumber ? `REF: ${referenceNumber}` : null,
         transactionTime ? `TIME: ${transactionTime}` : null,
         `TYPE: transfer`,
+        `COMMISSION_MODE: subtract_from_customer`,
+        `NET_AFTER_COMMISSION: ${computed.final}`,
         boxType ? `FROM_BOX_TYPE: ${boxType}` : null,
         toBoxType ? `TO_BOX_TYPE: ${toBoxType}` : null,
         toBoxId ? `TO_BOX_ID: ${toBoxId}` : null,
@@ -390,6 +418,8 @@ function AddTransactionPage() {
       transactionTime ? `TIME: ${transactionTime}` : null,
       `TYPE: operation`,
       `FUNDING_SOURCE: ${fundingSource}`,
+      `COMMISSION_MODE: subtract_from_customer`,
+      `NET_AFTER_COMMISSION: ${computed.final}`,
       isBoxFunding && boxType ? `BOX_TYPE: ${boxType}` : null,
       isBoxFunding && boxCurrency ? `BOX_CURRENCY: ${boxCurrency}` : null,
       isBoxFunding && boxAmount ? `BOX_AMOUNT: ${boxAmount}` : null,
@@ -495,9 +525,7 @@ function AddTransactionPage() {
                     resetParties();
                   }}
                   className={`relative flex flex-col items-center gap-3 rounded-2xl border-2 p-5 text-center transition ${
-                    active
-                      ? "border-teal-500 bg-teal-50/60"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
+                    active ? "border-teal-500 bg-teal-50/60" : "border-slate-200 bg-white hover:bg-slate-50"
                   }`}
                 >
                   {active && (
@@ -520,7 +548,7 @@ function AddTransactionPage() {
           </div>
         </Section>
 
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
           <div className="space-y-5">
             <Section title="تفاصيل المعاملة" subtitle="أدخل بيانات المعاملة بدقة" icon={FileText}>
               {isOperation ? (
@@ -554,9 +582,7 @@ function AddTransactionPage() {
                             }
                           }}
                           className={`relative flex items-center justify-between gap-3 rounded-2xl border-2 p-4 text-right transition ${
-                            active
-                              ? "border-teal-500 bg-teal-50/60"
-                              : "border-slate-200 bg-white hover:bg-slate-50"
+                            active ? "border-teal-500 bg-teal-50/60" : "border-slate-200 bg-white hover:bg-slate-50"
                           }`}
                         >
                           {active && (
@@ -644,7 +670,7 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="مبلغ العميل" required error={errors.customer_amount}>
+                      <Field label="مبلغ العميل قبل العمولة" required error={errors.customer_amount}>
                         <input
                           type="number"
                           step="0.01"
@@ -703,21 +729,11 @@ function AddTransactionPage() {
                       </Field>
 
                       <Field label="الوقت">
-                        <input
-                          type="time"
-                          value={transactionTime}
-                          onChange={(e) => setTransactionTime(e.target.value)}
-                          className="ep-input"
-                        />
+                        <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
                       </Field>
 
                       <Field label="التاريخ">
-                        <input
-                          type="date"
-                          value={transactionDate}
-                          onChange={(e) => setTransactionDate(e.target.value)}
-                          className="ep-input"
-                        />
+                        <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
                       </Field>
 
                       <Field label="رقم مرجعي">
@@ -798,13 +814,12 @@ function AddTransactionPage() {
                             setBoxType(box.type || boxType);
                             setBoxSearch("");
                             setShowBoxList(false);
-
                             if (box.currency) setBoxCurrency(box.currency);
                           }}
                         />
                       </Field>
 
-                      <Field label="مبلغ العميل" required error={errors.customer_amount}>
+                      <Field label="مبلغ العميل قبل العمولة" required error={errors.customer_amount}>
                         <input
                           type="number"
                           step="0.01"
@@ -875,21 +890,11 @@ function AddTransactionPage() {
                       </Field>
 
                       <Field label="الوقت">
-                        <input
-                          type="time"
-                          value={transactionTime}
-                          onChange={(e) => setTransactionTime(e.target.value)}
-                          className="ep-input"
-                        />
+                        <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
                       </Field>
 
                       <Field label="التاريخ">
-                        <input
-                          type="date"
-                          value={transactionDate}
-                          onChange={(e) => setTransactionDate(e.target.value)}
-                          className="ep-input"
-                        />
+                        <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
                       </Field>
 
                       <Field label="رقم مرجعي">
@@ -1008,7 +1013,7 @@ function AddTransactionPage() {
                     />
                   </Field>
 
-                  <Field label="المبلغ" required error={errors.amount}>
+                  <Field label="المبلغ قبل العمولة" required error={errors.amount}>
                     <input
                       type="number"
                       step="0.01"
@@ -1043,21 +1048,11 @@ function AddTransactionPage() {
                   </Field>
 
                   <Field label="التاريخ">
-                    <input
-                      type="date"
-                      value={transactionDate}
-                      onChange={(e) => setTransactionDate(e.target.value)}
-                      className="ep-input"
-                    />
+                    <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
                   </Field>
 
                   <Field label="الوقت">
-                    <input
-                      type="time"
-                      value={transactionTime}
-                      onChange={(e) => setTransactionTime(e.target.value)}
-                      className="ep-input"
-                    />
+                    <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
                   </Field>
 
                   <Field label="حالة العملية">
@@ -1067,12 +1062,11 @@ function AddTransactionPage() {
               )}
             </Section>
 
-            <Section title="العمولة (اختياري)" subtitle="أضف عمولة أو خصم على المبلغ" icon={Percent}>
-              <div className="grid grid-cols-3 gap-3">
+            <Section title="العمولة" subtitle="العمولة تخصم من مبلغ العميل في الملخص" icon={Percent}>
+              <div className="grid grid-cols-2 gap-3">
                 {[
-                  { key: "none", label: "بدون", icon: X },
-                  { key: "add", label: "إضافة", icon: Plus },
-                  { key: "subtract", label: "خصم", icon: Minus },
+                  { key: "none", label: "بدون عمولة", icon: X },
+                  { key: "apply", label: "خصم عمولة من العميل", icon: Percent },
                 ].map((mode) => {
                   const Icon = mode.icon;
                   const active = commissionMode === mode.key;
@@ -1101,13 +1095,13 @@ function AddTransactionPage() {
                 })}
               </div>
 
-              {commissionMode !== "none" && (
+              {commissionMode === "apply" && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
-                  className="mt-4 grid grid-cols-2 gap-3"
+                  className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2"
                 >
-                  <Field label="نوع العمولة">
+                  <Field label="نوع العمولة" error={errors.commission_type}>
                     <select
                       value={commissionType}
                       onChange={(e) => setCommissionType(e.target.value)}
@@ -1118,7 +1112,7 @@ function AddTransactionPage() {
                     </select>
                   </Field>
 
-                  <Field label={commissionType === "percentage" ? "النسبة %" : `المبلغ ${activeCurrency}`}>
+                  <Field label={commissionType === "percentage" ? "النسبة %" : `المبلغ ${activeCurrency}`} error={errors.commission}>
                     <input
                       type="number"
                       step="0.01"
@@ -1146,7 +1140,7 @@ function AddTransactionPage() {
           </div>
 
           <aside className="space-y-3">
-            <div className="ep-card-static min-w-0 overflow-hidden sticky top-24 p-5">
+            <div className="ep-card-static min-w-0 overflow-hidden p-5 lg:sticky lg:top-24">
               <div className="mb-4 flex items-center justify-between">
                 <Calculator className="h-5 w-5 text-slate-400" />
 
@@ -1157,27 +1151,17 @@ function AddTransactionPage() {
               </div>
 
               <div className="space-y-3 text-sm">
-                <SummaryRow
-                  label="نوع المعاملة"
-                  value={PAGE_TYPES.find((type) => type.key === pageType)?.label || "—"}
-                />
-
+                <SummaryRow label="نوع المعاملة" value={PAGE_TYPES.find((type) => type.key === pageType)?.label || "—"} />
                 <SummaryRow label="حالة العملية" value={getStatusLabel(operationStatus)} />
 
                 {referenceNumber && <SummaryRow label="الرقم المرجعي" value={referenceNumber} />}
 
                 {isOperation && (
-                  <SummaryRow
-                    label="مصدر الأموال"
-                    value={FUNDING_TYPES.find((type) => type.key === fundingSource)?.label || "—"}
-                  />
+                  <SummaryRow label="مصدر الأموال" value={FUNDING_TYPES.find((type) => type.key === fundingSource)?.label || "—"} />
                 )}
 
                 {isOperation && <SummaryRow label="العميل" value={selectedCustomer?.name || "—"} />}
-
-                {isOperation && isSupplierFunding && (
-                  <SummaryRow label="المورد" value={selectedSupplier?.name || "—"} />
-                )}
+                {isOperation && isSupplierFunding && <SummaryRow label="المورد" value={selectedSupplier?.name || "—"} />}
 
                 {isOperation && isBoxFunding && (
                   <>
@@ -1194,21 +1178,41 @@ function AddTransactionPage() {
                 <SummaryRow label="العملة" value={`${currentCur?.symbol || ""} ${activeCurrency}`} />
 
                 <SummaryRow
-                  label="المبلغ الأساسي"
-                  value={`${formatMoney(parseFloat(activeAmount) || 0)} ${activeCurrency}`}
+                  label={isTransfer ? "المبلغ قبل العمولة" : "مبلغ العميل قبل العمولة"}
+                  value={`${formatMoney(computed.baseAmount)} ${activeCurrency}`}
                   mono
                 />
+
+                {isOperation && isSupplierFunding && (
+                  <SummaryRow
+                    label="مبلغ المورد"
+                    value={`${formatMoney(numberValue(supplierAmount))} ${supplierCurrency}`}
+                    mono
+                  />
+                )}
+
+                {isOperation && isBoxFunding && (
+                  <SummaryRow
+                    label="مبلغ الصندوق"
+                    value={`${formatMoney(numberValue(boxAmount))} ${boxCurrency}`}
+                    mono
+                  />
+                )}
 
                 <SummaryRow
                   label="سعر الصرف"
-                  value={formatMoney(parseFloat(activeExchangeRate) || 0, { decimals: 4 })}
+                  value={formatMoney(computed.rate, { decimals: 4 })}
                   mono
                 />
 
-                {commissionMode !== "none" && computed.commAmount > 0 && (
+                {commissionMode === "apply" && computed.commissionAmount > 0 && (
                   <SummaryRow
-                    label={commissionMode === "add" ? "+ عمولة" : "- خصم"}
-                    value={`${formatMoney(computed.commAmount)} ${activeCurrency}`}
+                    label="العمولة"
+                    value={
+                      commissionType === "percentage"
+                        ? `${formatMoney(numberValue(commissionValue))}% = ${formatMoney(computed.commissionAmount)} ${activeCurrency}`
+                        : `${formatMoney(computed.commissionAmount)} ${activeCurrency}`
+                    }
                     mono
                   />
                 )}
@@ -1216,14 +1220,10 @@ function AddTransactionPage() {
                 <div className="my-3 h-px bg-slate-200" />
 
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-right text-[11px] font-bold text-slate-500">الإجمالي النهائي</p>
+                  <p className="text-right text-[11px] font-bold text-slate-500">الصافي بعد خصم العمولة</p>
 
-                  <p
-                    dir="ltr"
-                    className="mt-1 text-right font-mono text-2xl font-black tabular-nums text-slate-900"
-                  >
-                    {formatMoney(computed.final)}{" "}
-                    <span className="text-sm text-slate-500">{activeCurrency}</span>
+                  <p dir="ltr" className="mt-1 text-right font-mono text-2xl font-black tabular-nums text-slate-900">
+                    {formatMoney(computed.final)} <span className="text-sm text-slate-500">{activeCurrency}</span>
                   </p>
 
                   <p dir="ltr" className="mt-1 text-right font-mono text-xs text-slate-500">
@@ -1238,11 +1238,7 @@ function AddTransactionPage() {
                   حفظ المعاملة
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => navigate("/transactions")}
-                  className="ep-btn ep-btn-ghost h-11 w-full"
-                >
+                <button type="button" onClick={() => navigate("/transactions")} className="ep-btn ep-btn-ghost h-11 w-full">
                   إلغاء
                 </button>
               </div>
@@ -1256,11 +1252,7 @@ function AddTransactionPage() {
 
 function BoxTypeSelect({ value, onChange }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="ep-input appearance-none"
-    >
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="ep-input appearance-none">
       {BOX_TYPE_OPTIONS.map((item) => (
         <option key={item.value} value={item.value}>
           {item.label} - {item.hint}

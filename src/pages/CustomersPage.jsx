@@ -36,6 +36,7 @@ import ConfirmDialog from "../shared/ConfirmDialog";
 import ScrollReveal from "../shared/ScrollReveal";
 import { useToast } from "../shared/Toast";
 import customersService from "../services/customers";
+import operationsService from "../services/operations";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -43,8 +44,6 @@ import {
   formatDate,
   formatMoney,
   formatRelative,
-  getAmountSign,
-  getTransactionTypeMeta,
   unwrapList,
 } from "../shared/helpers";
 
@@ -175,25 +174,11 @@ function friendlyCustomerFieldError(field, message) {
     return "تحقق من اسم العميل";
   }
 
-  if (field === "type") {
-    return "الرجاء اختيار التصنيف";
-  }
-
-  if (field === "category") {
-    return "تصنيف العميل غير صحيح";
-  }
-
-  if (field === "balance_usd") {
-    return "الرصيد الابتدائي غير صحيح";
-  }
-
-  if (field === "is_active") {
-    return "حالة العميل غير صحيحة";
-  }
-
-  if (field === "note") {
-    return "تحقق من الملاحظات";
-  }
+  if (field === "type") return "الرجاء اختيار التصنيف";
+  if (field === "category") return "تصنيف العميل غير صحيح";
+  if (field === "balance_usd") return "الرصيد الابتدائي غير صحيح";
+  if (field === "is_active") return "حالة العميل غير صحيحة";
+  if (field === "note") return "تحقق من الملاحظات";
 
   return message || "القيمة غير صحيحة";
 }
@@ -239,6 +224,41 @@ async function checkDuplicateCustomerName(name, ignoreId = null) {
 
     return sameName && !sameId;
   });
+}
+
+function getListItems(res) {
+  if (!res) return [];
+
+  const normalized = unwrapList(res);
+
+  if (Array.isArray(normalized)) return normalized;
+  if (Array.isArray(normalized?.items)) return normalized.items;
+  if (Array.isArray(normalized?.data)) return normalized.data;
+
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res?.data?.data)) return res.data.data;
+  if (Array.isArray(res?.items)) return res.items;
+
+  return [];
+}
+
+function getOperationCustomerId(operation) {
+  return (
+    operation.customer_id ||
+    operation.customer?.id ||
+    operation.client_id ||
+    operation.client?.id ||
+    null
+  );
+}
+
+function getOperationSortDate(operation) {
+  return new Date(
+    operation.transaction_date ||
+      operation.created_at ||
+      operation.updated_at ||
+      0
+  ).getTime();
 }
 
 function CustomersPage() {
@@ -456,18 +476,44 @@ function CustomersPage() {
 
     (async () => {
       try {
-        const [customerRes, balanceRes, transactionsRes] = await Promise.all([
+        const legacyTransactionsPromise =
+          typeof customersService.transactions === "function"
+            ? customersService.transactions(selectedId, { per_page: 6 }).catch(() => null)
+            : Promise.resolve(null);
+
+        const operationsPromise =
+          typeof operationsService.list === "function"
+            ? operationsService.list({ customer_id: selectedId, per_page: 6 }).catch(() => null)
+            : Promise.resolve(null);
+
+        const [customerRes, balanceRes, legacyTransactionsRes, operationsRes] = await Promise.all([
           customersService.show(selectedId).catch(() => null),
           customersService.balance(selectedId).catch(() => null),
-          customersService.transactions(selectedId, { per_page: 6 }).catch(() => null),
+          legacyTransactionsPromise,
+          operationsPromise,
         ]);
 
         if (cancelled) return;
 
+        const legacyTransactions = getListItems(legacyTransactionsRes);
+
+        const operations = getListItems(operationsRes).filter((operation) => {
+          const operationCustomerId = getOperationCustomerId(operation);
+
+          if (!operationCustomerId) return true;
+
+          return String(operationCustomerId) === String(selectedId);
+        });
+
+        const mergedTransactions = [...operations, ...legacyTransactions]
+          .filter(Boolean)
+          .sort((a, b) => getOperationSortDate(b) - getOperationSortDate(a))
+          .slice(0, 6);
+
         setSelectedData({
           customer: customerRes?.data ?? customerRes ?? null,
           balance: normalizeBalance(balanceRes),
-          transactions: unwrapList(transactionsRes).items || [],
+          transactions: mergedTransactions,
         });
       } finally {
         if (!cancelled) setSelectedLoading(false);
@@ -727,7 +773,7 @@ function CustomersPage() {
       </section>
 
       <ScrollReveal>
-        <div className="relative min-w-0 z-0 ep-card-static overflow-visible">
+        <div className="relative z-0 min-w-0 overflow-visible ep-card-static">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div className="relative w-full max-w-md">
               <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1102,7 +1148,7 @@ function FilterDropdown({ value, options, onChange }) {
             animate={{ opacity: 1, y: 4, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16 }}
-            className="absolute min-w-0 right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-2xl"
+            className="absolute right-0 top-full z-30 mt-2 w-48 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-2xl"
           >
             {menuOptions.map((option) => {
               const active = String(option.value) === String(value);
@@ -1182,25 +1228,81 @@ function IconBtn({ icon: Icon, onClick, color = "slate", disabled }) {
 function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onRestore }) {
   const transactions = data?.transactions || [];
 
-  const totalIn = useMemo(
-    () =>
-      transactions
-        .filter((t) => ["receive", "deposit"].includes(t.type))
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+  function getTxAmount(transaction) {
+    return Number(
+      transaction.customer_amount ||
+        transaction.amount ||
+        transaction.total_amount ||
+        transaction.value ||
+        0
+    );
+  }
+
+  function getTxCurrency(transaction) {
+    return (
+      transaction.customer_currency ||
+      transaction.currency_code ||
+      transaction.currency ||
+      "USD"
+    );
+  }
+
+  function getTxReference(transaction) {
+    return (
+      transaction.reference_number ||
+      transaction.reference ||
+      transaction.code ||
+      `TRX-${String(transaction.id || "").padStart(5, "0")}`
+    );
+  }
+
+  function getTxDate(transaction) {
+    return transaction.transaction_date || transaction.created_at || transaction.updated_at;
+  }
+
+  function getTxCommission(transaction) {
+    const amount = getTxAmount(transaction);
+    const commissionAmount = Number(transaction.commission_amount || 0);
+    const commissionRate = Number(transaction.commission_rate || 0);
+
+    if (commissionAmount > 0) return commissionAmount;
+
+    if (commissionRate > 0 && transaction.commission_type === "percentage") {
+      return (amount * commissionRate) / 100;
+    }
+
+    if (commissionRate > 0 && transaction.commission_type === "fixed") {
+      return commissionRate;
+    }
+
+    return 0;
+  }
+
+  function getTxStatusLabel(status) {
+    if (status === "completed") return "مكتملة";
+    if (status === "cancelled") return "ملغاة";
+    return "قيد التنفيذ";
+  }
+
+  function getTxStatusColor(status) {
+    if (status === "completed") return "emerald";
+    if (status === "cancelled") return "rose";
+    return "amber";
+  }
+
+  const totalAmount = useMemo(
+    () => transactions.reduce((sum, transaction) => sum + getTxAmount(transaction), 0),
     [transactions]
   );
 
-  const totalOut = useMemo(
-    () =>
-      transactions
-        .filter((t) => ["send", "withdraw", "withdrawal"].includes(t.type))
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+  const totalCommission = useMemo(
+    () => transactions.reduce((sum, transaction) => sum + getTxCommission(transaction), 0),
     [transactions]
   );
 
   if (loading && !data) {
     return (
-      <div className="ep-card-static min-w-0 overflow-hidden p-6">
+      <div className="min-w-0 overflow-hidden p-6 ep-card-static">
         <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
           جارٍ تحميل التفاصيل...
@@ -1216,63 +1318,10 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
 
   return (
     <ScrollReveal>
-      <div className="ep-card-static min-w-0 overflow-hidden">
-        <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-[1.1fr_1fr_1.2fr]">
-          <section className="order-3 xl:order-1">
+      <div className="min-w-0 overflow-hidden p-5 ep-card-static">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1fr]">
+          <section className="order-1 xl:order-1">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400">{transactions.length} حركة</span>
-              <h4 className="text-sm font-black text-slate-900">آخر النشاطات</h4>
-            </div>
-
-            {transactions.length === 0 ? (
-              <div className="flex min-w-0 overflow-hidden min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
-                <ArrowRightLeft className="mb-2 h-6 w-6 text-slate-400" />
-                <p className="text-xs font-black text-slate-700">لا توجد معاملات</p>
-                <p className="mt-1 text-[10px] text-slate-400">لم يتم تسجيل حركات بعد</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {transactions.slice(0, 6).map((transaction) => {
-                  const type = getTransactionTypeMeta(transaction.type);
-                  const sign = getAmountSign(transaction.type);
-
-                  return (
-                    <div
-                      key={transaction.id}
-                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-2.5"
-                    >
-                      <span
-                        dir="ltr"
-                        className={sign === "-" ? "text-xs font-black text-rose-600" : "text-xs font-black text-emerald-600"}
-                      >
-                        {sign}
-                        {formatMoney(transaction.amount)} {transaction.currency_code || "USD"}
-                      </span>
-
-                      <div className="text-right">
-                        <p className="text-xs font-black text-slate-900">{type.label}</p>
-                        <p className="text-[10px] text-slate-400">{formatRelative(transaction.created_at)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section className="order-2 xl:order-2">
-            <h4 className="mb-3 text-sm font-black text-slate-900">تفاصيل الحساب</h4>
-
-            <div className="grid grid-cols-2 gap-2">
-              <MiniStat label="عدد المعاملات" value={transactions.length} icon={ArrowRightLeft} color="violet" />
-              <MiniStat label="إجمالي السحوبات" value={formatMoney(totalOut)} icon={ArrowUpRight} color="rose" />
-              <MiniStat label="إجمالي الإيداعات" value={formatMoney(totalIn)} icon={ArrowDownLeft} color="emerald" />
-              <MiniStat label="الرصيد الحالي" value={`${formatMoney(data.balance || 0)} USD`} icon={Wallet} color="teal" />
-            </div>
-          </section>
-
-          <section className="order-1 xl:order-3">
-            <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 {!customer.deleted_at ? (
                   <>
@@ -1286,15 +1335,15 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
                 <IconBtn icon={X} onClick={onClose} />
               </div>
 
-              <h4 className="text-sm font-black text-slate-900">بيانات الحساب</h4>
+              <h4 className="text-lg font-black text-slate-900">بيانات الحساب</h4>
             </div>
 
-            <div className="mt-4 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="flex items-center gap-5 text-right" dir="rtl">
                 <DefaultAvatar customer={customer} size="lg" />
 
                 <div className="min-w-0 flex-1 text-right">
-                  <p className="text-xl font-black text-slate-900">{customer.name}</p>
+                  <p className="text-2xl font-black text-slate-900">{customer.name}</p>
 
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Badge color={typeMeta.color}>{typeMeta.label}</Badge>
@@ -1325,9 +1374,93 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
               <ProfileTile label="التصنيف" value={typeMeta.label} icon={typeMeta.icon} />
               <ProfileTile label="تاريخ التسجيل" value={formatDate(customer.created_at)} icon={CalendarDays} />
               <ProfileTile label="كود العميل" value={customer.customer_code || `#${customer.id}`} icon={MoreHorizontal} />
+              <ProfileTile label="الرصيد الحالي" value={`${formatMoney(data.balance || 0)} USD`} icon={Wallet} />
+              {customer.phone && <ProfileTile label="الهاتف" value={customer.phone} icon={MoreHorizontal} />}
+              {customer.country && <ProfileTile label="الدولة" value={customer.country} icon={MoreHorizontal} />}
+            </div>
+          </section>
+
+          <section className="order-2 xl:order-2">
+            <h4 className="mb-3 text-right text-lg font-black text-slate-900">تفاصيل الحساب</h4>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <MiniStat label="عدد المعاملات" value={transactions.length} icon={ArrowRightLeft} color="violet" />
+              <MiniStat label="إجمالي التعاملات" value={`${formatMoney(totalAmount)} USD`} icon={ArrowUpRight} color="emerald" />
+              <MiniStat label="إجمالي العمولة" value={`${formatMoney(totalCommission)} USD`} icon={ArrowDownLeft} color="rose" />
+              <MiniStat label="الرصيد الحالي" value={`${formatMoney(data.balance || 0)} USD`} icon={Wallet} color="teal" />
             </div>
           </section>
         </div>
+
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <span className="rounded-full bg-slate-50 px-3 py-1 text-[11px] font-black text-slate-600">
+              {transactions.length} حركة
+            </span>
+
+            <div className="text-right">
+              <h4 className="text-lg font-black text-slate-900">آخر المعاملات</h4>
+              <p className="mt-1 text-xs text-slate-500">آخر العمليات المرتبطة بهذا العميل</p>
+            </div>
+          </div>
+
+          {transactions.length === 0 ? (
+            <div className="flex min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
+              <ArrowRightLeft className="mb-2 h-7 w-7 text-slate-400" />
+              <p className="text-sm font-black text-slate-700">لا توجد معاملات</p>
+              <p className="mt-1 text-xs text-slate-400">لم يتم تسجيل حركات بعد</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="ep-table min-w-[850px]">
+                <thead>
+                  <tr>
+                    <th className="text-right">رقم العملية</th>
+                    <th className="text-right">التاريخ</th>
+                    <th className="text-right">الحالة</th>
+                    <th className="text-right">المبلغ</th>
+                    <th className="text-right">العمولة</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {transactions.slice(0, 6).map((transaction) => {
+                    const amount = getTxAmount(transaction);
+                    const currency = getTxCurrency(transaction);
+                    const commission = getTxCommission(transaction);
+                    const status = transaction.status || "pending";
+
+                    return (
+                      <tr key={transaction.id}>
+                        <td dir="ltr" className="font-mono text-xs font-black text-slate-800">
+                          {getTxReference(transaction)}
+                        </td>
+
+                        <td className="text-xs text-slate-500">
+                          {getTxDate(transaction) ? formatDate(getTxDate(transaction)) : "—"}
+                        </td>
+
+                        <td>
+                          <Badge color={getTxStatusColor(status)}>
+                            {getTxStatusLabel(status)}
+                          </Badge>
+                        </td>
+
+                        <td dir="ltr" className="font-mono text-xs font-black text-slate-900">
+                          {formatMoney(amount)} {currency}
+                        </td>
+
+                        <td dir="ltr" className="font-mono text-xs font-black text-slate-700">
+                          {formatMoney(commission)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
     </ScrollReveal>
   );
@@ -1337,35 +1470,187 @@ function MiniStat({ label, value, icon: Icon, color = "teal" }) {
   const palette = {
     teal: "border-teal-200 bg-teal-50 text-teal-700",
     violet: "border-violet-200 bg-violet-50 text-violet-700",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
     rose: "border-rose-200 bg-rose-50 text-rose-700",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 text-right">
-      <div className="flex items-center justify-between gap-2">
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${palette[color]}`}>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className={`flex h-9 w-9 items-center justify-center rounded-xl border ${palette[color] || palette.teal}`}>
           <Icon className="h-4 w-4" />
         </div>
-        <p className="text-[10px] font-bold text-slate-500">{label}</p>
+
+        <div className="min-w-0 text-right">
+          <p className="text-[11px] font-bold text-slate-500">{label}</p>
+          <p dir="ltr" className="mt-1 truncate font-mono text-sm font-black text-slate-900">
+            {value}
+          </p>
+        </div>
       </div>
-      <p className="mt-2 truncate text-sm font-black text-slate-900">{value}</p>
     </div>
   );
 }
 
 function ProfileTile({ label, value, icon: Icon }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2">
-      <div className="text-right">
-        <p className="text-[10px] font-bold text-slate-500">{label}</p>
-        <p className="mt-0.5 truncate text-xs font-black text-slate-900">{value || "—"}</p>
-      </div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500">
+          {Icon ? <Icon className="h-4 w-4" /> : <MoreHorizontal className="h-4 w-4" />}
+        </div>
 
-      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-500">
-        <Icon className="h-3.5 w-3.5" />
+        <div className="min-w-0 text-right">
+          <p className="text-[11px] font-bold text-slate-500">{label}</p>
+          <p className="mt-1 truncate text-sm font-black text-slate-900">{value || "—"}</p>
+        </div>
       </div>
     </div>
+  );
+}
+
+function CustomerForm({ initial, onSubmit, loading, errors = {}, onClearError, onCancel }) {
+  const [form, setForm] = useState(() => ({
+    name: initial?.name || "",
+    phone: initial?.phone || "",
+    customer_code: initial?.customer_code || "",
+    type: initial?.type || "customer",
+    category: initial?.category || "regular",
+    balance_usd: initial?.balance_usd || "",
+    country: initial?.country || "",
+    note: initial?.note || "",
+    is_active: initial?.is_active !== false,
+  }));
+
+  function update(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    onClearError?.(field);
+  }
+
+  function submit(e) {
+    e.preventDefault();
+
+    onSubmit({
+      name: String(form.name || "").trim(),
+      phone: String(form.phone || "").trim() || null,
+      customer_code: String(form.customer_code || "").trim() || null,
+      type: form.type,
+      category: form.category || "regular",
+      balance_usd: Number(form.balance_usd || 0),
+      country: String(form.country || "").trim() || null,
+      note: String(form.note || "").trim() || null,
+      is_active: Boolean(form.is_active),
+    });
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="الاسم" error={errors.name}>
+          <input
+            value={form.name}
+            onChange={(e) => update("name", e.target.value)}
+            className="ep-input"
+            placeholder="اسم العميل"
+          />
+        </FormField>
+
+        <FormField label="كود العميل" error={errors.customer_code}>
+          <input
+            value={form.customer_code}
+            onChange={(e) => update("customer_code", e.target.value)}
+            className="ep-input"
+            placeholder="مثال: 3327"
+          />
+        </FormField>
+
+        <FormField label="الهاتف" error={errors.phone}>
+          <input
+            value={form.phone}
+            onChange={(e) => update("phone", e.target.value)}
+            className="ep-input"
+            placeholder="+970..."
+          />
+        </FormField>
+
+        <FormField label="الدولة" error={errors.country}>
+          <input
+            value={form.country}
+            onChange={(e) => update("country", e.target.value)}
+            className="ep-input"
+            placeholder="الدولة"
+          />
+        </FormField>
+
+        <FormField label="التصنيف" error={errors.type}>
+          <select value={form.type} onChange={(e) => update("type", e.target.value)} className="ep-input">
+            <option value="customer">عميل</option>
+            <option value="supplier">مورد</option>
+          </select>
+        </FormField>
+
+        <FormField label="الفئة" error={errors.category}>
+          <select value={form.category} onChange={(e) => update("category", e.target.value)} className="ep-input">
+            <option value="regular">regular</option>
+            <option value="vip">vip</option>
+            <option value="agent">agent</option>
+            <option value="company">company</option>
+          </select>
+        </FormField>
+
+        <FormField label="الرصيد USD" error={errors.balance_usd}>
+          <input
+            type="number"
+            step="0.0001"
+            value={form.balance_usd}
+            onChange={(e) => update("balance_usd", e.target.value)}
+            className="ep-input"
+            placeholder="0.00"
+          />
+        </FormField>
+
+        <FormField label="الحالة" error={errors.is_active}>
+          <select
+            value={form.is_active ? "active" : "inactive"}
+            onChange={(e) => update("is_active", e.target.value === "active")}
+            className="ep-input"
+          >
+            <option value="active">نشط</option>
+            <option value="inactive">موقوف</option>
+          </select>
+        </FormField>
+      </div>
+
+      <FormField label="ملاحظات" error={errors.note}>
+        <textarea
+          value={form.note}
+          onChange={(e) => update("note", e.target.value)}
+          className="ep-input min-h-24"
+          placeholder="ملاحظات اختيارية"
+        />
+      </FormField>
+
+      <div className="flex items-center justify-end gap-2 pt-2">
+        <button type="button" onClick={onCancel} disabled={loading} className="ep-btn ep-btn-ghost">
+          إلغاء
+        </button>
+
+        <button type="submit" disabled={loading} className="ep-btn ep-btn-primary">
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          حفظ
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function FormField({ label, error, children }) {
+  return (
+    <label className="block text-right">
+      <span className="mb-1.5 block text-xs font-black text-slate-600">{label}</span>
+      {children}
+      {error && <p className="mt-1.5 text-[11px] font-bold text-rose-600">{error}</p>}
+    </label>
   );
 }
 
@@ -1376,222 +1661,6 @@ function TableSkeleton() {
         <div key={index} className="ep-skeleton h-14" />
       ))}
     </div>
-  );
-}
-
-function CustomerForm({ initial, onSubmit, loading, onCancel, errors = {}, onClearError }) {
-  const [form, setForm] = useState({
-    customer_code: initial?.customer_code || "",
-    name: initial?.name || "",
-    type: initial?.type || "customer",
-    balance_usd: initial?.balance_usd || "",
-    note: initial?.note || "",
-    is_active: initial?.is_active !== false,
-  });
-
-  const [localErrors, setLocalErrors] = useState({});
-
-  const fieldErrors = {
-    ...errors,
-    ...localErrors,
-  };
-
-  function clearFieldError(key) {
-    setLocalErrors((prev) => ({ ...prev, [key]: "" }));
-    onClearError?.(key);
-  }
-
-  function validateForm() {
-    const nextErrors = {};
-
-    if (!String(form.name || "").trim()) {
-      nextErrors.name = "الرجاء إدخال اسم العميل";
-    }
-
-    if (!String(form.customer_code || "").trim()) {
-      nextErrors.customer_code = "الرجاء إدخال كود العميل";
-    }
-
-    if (!form.type) {
-      nextErrors.type = "الرجاء اختيار التصنيف";
-    }
-
-    if (form.balance_usd !== "" && Number.isNaN(Number(form.balance_usd))) {
-      nextErrors.balance_usd = "الرصيد الابتدائي يجب أن يكون رقمًا صحيحًا";
-    }
-
-    if (form.balance_usd !== "" && Number(form.balance_usd) < 0) {
-      nextErrors.balance_usd = "الرصيد الابتدائي لا يمكن أن يكون أقل من صفر";
-    }
-
-    setLocalErrors(nextErrors);
-
-    return Object.keys(nextErrors).length === 0;
-  }
-
-  function handleSubmit(e) {
-    e.preventDefault();
-
-    if (!validateForm()) return;
-
-    const payload = {
-      customer_code: form.customer_code.trim(),
-      name: form.name.trim(),
-      type: form.type,
-      note: form.note.trim(),
-     category: form.type === "supplier" ? "company" : "regular",
-      balance_usd: form.balance_usd === "" ? 0 : Number(form.balance_usd),
-      is_active: form.is_active,
-    };
-
-    if (!payload.note) delete payload.note;
-
-    onSubmit(payload);
-  }
-
-  return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-4" dir="rtl">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="الاسم" error={fieldErrors.name}>
-          <input
-            value={form.name}
-            onChange={(e) => {
-              setForm({ ...form, name: e.target.value });
-              clearFieldError("name");
-            }}
-            className={[
-              "ep-input",
-              fieldErrors.name ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
-            ].join(" ")}
-            placeholder="اسم العميل"
-            disabled={loading}
-          />
-        </Field>
-
-        <Field label="كود العميل" error={fieldErrors.customer_code}>
-          <input
-            value={form.customer_code}
-            onChange={(e) => {
-              setForm({ ...form, customer_code: e.target.value });
-              clearFieldError("customer_code");
-            }}
-            className={[
-              "ep-input",
-              fieldErrors.customer_code ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
-            ].join(" ")}
-            placeholder="335"
-            dir="ltr"
-            disabled={loading}
-          />
-        </Field>
-
-        <Field label="التصنيف" error={fieldErrors.type || fieldErrors.category}>
-          <select
-            value={form.type}
-            onChange={(e) => {
-              setForm({ ...form, type: e.target.value });
-              clearFieldError("type");
-              clearFieldError("category");
-            }}
-            className={[
-              "ep-input appearance-none",
-              fieldErrors.type || fieldErrors.category
-                ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10"
-                : "",
-            ].join(" ")}
-            disabled={loading}
-          >
-            <option value="customer">عميل</option>
-            <option value="supplier">مورد</option>
-          </select>
-        </Field>
-
-        <Field label="الرصيد الابتدائي" error={fieldErrors.balance_usd}>
-          <input
-            type="number"
-            step="0.01"
-            value={form.balance_usd}
-            onChange={(e) => {
-              setForm({ ...form, balance_usd: e.target.value });
-              clearFieldError("balance_usd");
-            }}
-            className={[
-              "ep-input",
-              fieldErrors.balance_usd ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
-            ].join(" ")}
-            placeholder="0.00"
-            dir="ltr"
-            disabled={loading}
-          />
-        </Field>
-
-        <Field label="الحالة" error={fieldErrors.is_active}>
-          <select
-            value={form.is_active ? "1" : "0"}
-            onChange={(e) => {
-              setForm({ ...form, is_active: e.target.value === "1" });
-              clearFieldError("is_active");
-            }}
-            className={[
-              "ep-input appearance-none",
-              fieldErrors.is_active ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
-            ].join(" ")}
-            disabled={loading}
-          >
-            <option value="1">نشط</option>
-            <option value="0">موقوف</option>
-          </select>
-        </Field>
-      </div>
-
-      <Field label="ملاحظات" error={fieldErrors.note}>
-        <textarea
-          value={form.note}
-          onChange={(e) => {
-            setForm({ ...form, note: e.target.value });
-            clearFieldError("note");
-          }}
-          className={[
-            "ep-input min-h-24 resize-none py-3",
-            fieldErrors.note ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "",
-          ].join(" ")}
-          placeholder="ملاحظات اختيارية..."
-          disabled={loading}
-        />
-      </Field>
-
-      <div className="flex items-center justify-end gap-2 pt-2">
-        <button type="button" onClick={onCancel} disabled={loading} className="ep-btn ep-btn-ghost">
-          إلغاء
-        </button>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
-          style={{ background: "hsl(179, 87%, 28%)" }}
-        >
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {initial ? "حفظ التعديلات" : "حفظ العميل"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function Field({ label, children, error }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-bold text-slate-700">{label}</span>
-
-      {children}
-
-      {error && (
-        <p className="mt-1.5 text-right text-[11px] font-black text-rose-600">
-          {error}
-        </p>
-      )}
-    </label>
   );
 }
 
