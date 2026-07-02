@@ -15,6 +15,9 @@ const AddTransactionPage = lazy(() => import("./pages/AddTransactionPage"));
 const CurrenciesPage = lazy(() => import("./pages/CurrenciesPage"));
 const BoxesPage = lazy(() => import("./pages/BoxesPage"));
 const BoxGroupPage = lazy(() => import("./pages/BoxGroupPage"));
+const ExpensesPage = lazy(() => import("./pages/ExpensesPage"));
+const CapitalPage = lazy(() => import("./pages/CapitalPage"));
+const ReconciliationPage = lazy(() => import("./pages/ReconciliationPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ArchivePage = lazy(() => import("./pages/ArchivePage"));
@@ -62,7 +65,9 @@ function Shell() {
 
           <Route element={isLoggedIn ? <AppLayout /> : <Navigate to="/login" replace />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+
             <Route path="/customers" element={<CustomersPage />} />
+
             <Route path="/transactions" element={<TransactionsPage />} />
             <Route path="/add-transaction" element={<AddTransactionPage />} />
 
@@ -72,9 +77,15 @@ function Shell() {
             <Route path="/boxes" element={<BoxesPage />} />
             <Route path="/boxes/:type" element={<BoxGroupPage />} />
 
+            <Route path="/expenses" element={<ExpensesPage />} />
+            <Route path="/capital" element={<CapitalPage />} />
+            <Route path="/reconciliation" element={<ReconciliationPage />} />
+
             <Route path="/reports" element={<ReportsPage />} />
+
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/archive" element={<ArchivePage />} />
+
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
 
