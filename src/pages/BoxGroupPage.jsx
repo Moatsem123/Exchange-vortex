@@ -31,21 +31,59 @@ import { useToast } from "../shared/Toast";
 const CURRENCIES = ["USD", "EUR", "ILS", "TRY", "USDT", "GBP"];
 
 const GROUPS = {
-  turkish: { apiType: "turkish", title: "صناديق تركيا", subtitle: "إدارة حسابات برق والطير والحسابات التركية", addText: "إضافة حساب تركي", icon: Coins },
-  "local-bank-wallet": { apiType: "local_bank_wallet", title: "البنوك والمحافظ الرقمية", subtitle: "إدارة البنوك والمحافظ مثل بنك فلسطين وجوال باي", addText: "إضافة بنك أو محفظة", icon: Building2 },
-  "usdt-wallet": { apiType: "usdt_wallet", title: "المحافظ الإلكترونية", subtitle: "إدارة Binance ومحافظ USDT والحسابات الإلكترونية", addText: "إضافة محفظة إلكترونية", icon: Wallet },
+  turkish: {
+    apiType: "turkish",
+    title: "صناديق تركيا",
+    subtitle: "إدارة حسابات برق والطير والحسابات التركية",
+    addText: "إضافة حساب تركي",
+    icon: Coins,
+  },
+  "local-bank-wallet": {
+    apiType: "local_bank_wallet",
+    title: "البنوك والمحافظ الرقمية",
+    subtitle: "إدارة البنوك والمحافظ مثل بنك فلسطين وجوال باي",
+    addText: "إضافة بنك أو محفظة",
+    icon: Building2,
+  },
+  "usdt-wallet": {
+    apiType: "usdt_wallet",
+    title: "المحافظ الإلكترونية",
+    subtitle: "إدارة Binance ومحافظ USDT والحسابات الإلكترونية",
+    addText: "إضافة محفظة إلكترونية",
+    icon: Wallet,
+  },
 };
 
-const INITIAL_FORM = { name: "", current_balance: "", currency: "USD", account_identifier: "", status: "active", notes: "" };
-const INITIAL_BALANCE = { operation_type: "add", amount: "", notes: "" };
-const INITIAL_ADJUSTMENT = { type: "increase", amount: "", reason: "" };
+const INITIAL_FORM = {
+  name: "",
+  current_balance: "",
+  currency: "USD",
+  account_identifier: "",
+  status: "active",
+  notes: "",
+};
+
+const INITIAL_BALANCE = {
+  operation_type: "add",
+  amount: "",
+  notes: "",
+};
+
+const INITIAL_ADJUSTMENT = {
+  adjustment_type: "increase",
+  amount: "",
+  reason: "",
+};
 
 function unwrapList(res) {
   return Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
 }
 
 function money(value) {
-  return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function getIdentifierLabel(type) {
@@ -74,6 +112,40 @@ function getOperationReference(operation) {
   return operation.reference_number || operation.reference || operation.code || `OP-${operation.id}`;
 }
 
+function mapAdjustmentApiErrors(err) {
+  const apiErrors = err?.response?.data?.errors;
+
+  if (!apiErrors || typeof apiErrors !== "object") return {};
+
+  const mapped = {};
+
+  Object.keys(apiErrors).forEach((key) => {
+    const message = Array.isArray(apiErrors[key]) ? apiErrors[key][0] : apiErrors[key];
+
+    if (key === "adjustment_type") {
+      mapped.adjustment_type = "اختر نوع التسوية رجاءً";
+      return;
+    }
+
+    if (key === "amount") {
+      const text = String(message || "");
+      mapped.amount = text.includes("أكبر من صفر")
+        ? "مبلغ التسوية لازم يكون أكبر من صفر"
+        : "أضف مبلغ التسوية رجاءً";
+      return;
+    }
+
+    if (key === "reason") {
+      mapped.reason = "اكتب سبب التسوية رجاءً";
+      return;
+    }
+
+    mapped[key] = message || "القيمة غير صحيحة";
+  });
+
+  return mapped;
+}
+
 function BoxGroupPage() {
   const toast = useToast();
   const { type } = useParams();
@@ -96,6 +168,7 @@ function BoxGroupPage() {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustItem, setAdjustItem] = useState(null);
   const [adjustForm, setAdjustForm] = useState(INITIAL_ADJUSTMENT);
+  const [adjustErrors, setAdjustErrors] = useState({});
 
   const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
   const [adjustmentsItem, setAdjustmentsItem] = useState(null);
@@ -121,10 +194,15 @@ function BoxGroupPage() {
     try {
       let res;
 
-      if (group.apiType === "turkish") res = await boxesService.listTurkish({ per_page: 100 });
-      else if (group.apiType === "local_bank_wallet") res = await boxesService.listLocalBankWallets({ per_page: 100 });
-      else if (group.apiType === "usdt_wallet") res = await boxesService.listUsdtWallets({ per_page: 100 });
-      else res = await boxesService.list({ type: group.apiType, per_page: 100 });
+      if (group.apiType === "turkish") {
+        res = await boxesService.listTurkish({ per_page: 100 });
+      } else if (group.apiType === "local_bank_wallet") {
+        res = await boxesService.listLocalBankWallets({ per_page: 100 });
+      } else if (group.apiType === "usdt_wallet") {
+        res = await boxesService.listUsdtWallets({ per_page: 100 });
+      } else {
+        res = await boxesService.list({ type: group.apiType, per_page: 100 });
+      }
 
       setItems(unwrapList(res));
     } catch (err) {
@@ -138,7 +216,43 @@ function BoxGroupPage() {
     load();
   }, [type]);
 
-  const total = useMemo(() => items.reduce((sum, item) => sum + Number(item.current_balance || 0), 0), [items]);
+  const total = useMemo(() => {
+    return items.reduce((sum, item) => sum + Number(item.current_balance || 0), 0);
+  }, [items]);
+
+  function updateAdjustField(field, value) {
+    setAdjustForm((prev) => ({ ...prev, [field]: value }));
+
+    setAdjustErrors((prev) => {
+      if (!prev[field]) return prev;
+
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
+
+  function validateAdjustment() {
+    const validationErrors = {};
+
+    if (!adjustForm.adjustment_type) {
+      validationErrors.adjustment_type = "اختر نوع التسوية رجاءً";
+    }
+
+    if (!adjustForm.amount) {
+      validationErrors.amount = "أضف مبلغ التسوية رجاءً";
+    } else if (Number(adjustForm.amount) <= 0) {
+      validationErrors.amount = "مبلغ التسوية لازم يكون أكبر من صفر";
+    }
+
+    if (!String(adjustForm.reason || "").trim()) {
+      validationErrors.reason = "اكتب سبب التسوية رجاءً";
+    }
+
+    setAdjustErrors(validationErrors);
+
+    return Object.keys(validationErrors).length === 0;
+  }
 
   function openCreate() {
     setEditingItem(null);
@@ -223,6 +337,7 @@ function BoxGroupPage() {
   function openAdjust(item) {
     setAdjustItem(item);
     setAdjustForm(INITIAL_ADJUSTMENT);
+    setAdjustErrors({});
     setAdjustOpen(true);
   }
 
@@ -230,19 +345,29 @@ function BoxGroupPage() {
     e.preventDefault();
     if (!adjustItem) return;
 
+    if (!validateAdjustment()) return;
+
     setBusy(true);
 
     try {
       await boxesService.adjust(adjustItem.id, {
-        type: adjustForm.type,
-        amount: Number(adjustForm.amount || 0),
-        reason: adjustForm.reason || null,
+        adjustment_type: adjustForm.adjustment_type,
+        amount: Number(adjustForm.amount),
+        reason: String(adjustForm.reason || "").trim(),
       });
 
       toast.success("تمت تسوية الصندوق");
       setAdjustOpen(false);
+      setAdjustErrors({});
       load();
     } catch (err) {
+      const fieldErrors = mapAdjustmentApiErrors(err);
+
+      if (Object.keys(fieldErrors).length > 0) {
+        setAdjustErrors(fieldErrors);
+        return;
+      }
+
       toast.error(extractApiError(err));
     } finally {
       setBusy(false);
@@ -345,7 +470,9 @@ function BoxGroupPage() {
           <ErrorState onRetry={load} />
         ) : loading ? (
           <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="ep-skeleton h-52" />)}
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="ep-skeleton h-52" />
+            ))}
           </div>
         ) : items.length === 0 ? (
           <EmptyState title="لا يوجد حسابات" description={`أضف أول حساب داخل ${group.title}`} />
@@ -373,25 +500,55 @@ function BoxGroupPage() {
         <form onSubmit={submitForm} className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="اسم الحساب">
-              <input required value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} className="ep-input" placeholder="مثال: برق، بنك فلسطين، Binance" />
+              <input
+                required
+                value={form.name}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                className="ep-input"
+                placeholder="مثال: برق، بنك فلسطين، Binance"
+              />
             </Field>
 
             <Field label="الرصيد الابتدائي">
-              <input type="number" step="0.0001" value={form.current_balance} onChange={(e) => setForm((p) => ({ ...p, current_balance: e.target.value }))} className="ep-input" disabled={!!editingItem} />
+              <input
+                type="number"
+                step="0.0001"
+                value={form.current_balance}
+                onChange={(e) => setForm((p) => ({ ...p, current_balance: e.target.value }))}
+                className="ep-input"
+                disabled={!!editingItem}
+              />
             </Field>
 
             <Field label="العملة">
-              <select value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))} className="ep-input">
-                {CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+              <select
+                value={form.currency}
+                onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
+                className="ep-input"
+              >
+                {CURRENCIES.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
               </select>
             </Field>
 
             <Field label={getIdentifierLabel(group.apiType)}>
-              <input value={form.account_identifier} onChange={(e) => setForm((p) => ({ ...p, account_identifier: e.target.value }))} className="ep-input" placeholder={getIdentifierPlaceholder(group.apiType)} />
+              <input
+                value={form.account_identifier}
+                onChange={(e) => setForm((p) => ({ ...p, account_identifier: e.target.value }))}
+                className="ep-input"
+                placeholder={getIdentifierPlaceholder(group.apiType)}
+              />
             </Field>
 
             <Field label="الحالة">
-              <select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} className="ep-input">
+              <select
+                value={form.status}
+                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                className="ep-input"
+              >
                 <option value="active">نشط</option>
                 <option value="inactive">غير نشط</option>
               </select>
@@ -399,7 +556,12 @@ function BoxGroupPage() {
           </div>
 
           <Field label="ملاحظات">
-            <textarea value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} className="ep-input min-h-24" placeholder="اختياري" />
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+              className="ep-input min-h-24"
+              placeholder="اختياري"
+            />
           </Field>
 
           <FormActions busy={busy} onCancel={() => setFormOpen(false)} />
@@ -409,18 +571,33 @@ function BoxGroupPage() {
       <Modal open={balanceOpen} onClose={() => setBalanceOpen(false)} title="تعديل الرصيد" subtitle={balanceItem?.name} icon={Wallet}>
         <form onSubmit={submitBalance} className="space-y-4">
           <Field label="نوع العملية">
-            <select value={balanceForm.operation_type} onChange={(e) => setBalanceForm((p) => ({ ...p, operation_type: e.target.value }))} className="ep-input">
+            <select
+              value={balanceForm.operation_type}
+              onChange={(e) => setBalanceForm((p) => ({ ...p, operation_type: e.target.value }))}
+              className="ep-input"
+            >
               <option value="add">إضافة</option>
               <option value="subtract">خصم</option>
             </select>
           </Field>
 
           <Field label="المبلغ">
-            <input required type="number" step="0.0001" value={balanceForm.amount} onChange={(e) => setBalanceForm((p) => ({ ...p, amount: e.target.value }))} className="ep-input" />
+            <input
+              required
+              type="number"
+              step="0.0001"
+              value={balanceForm.amount}
+              onChange={(e) => setBalanceForm((p) => ({ ...p, amount: e.target.value }))}
+              className="ep-input"
+            />
           </Field>
 
           <Field label="ملاحظات">
-            <textarea value={balanceForm.notes} onChange={(e) => setBalanceForm((p) => ({ ...p, notes: e.target.value }))} className="ep-input min-h-24" />
+            <textarea
+              value={balanceForm.notes}
+              onChange={(e) => setBalanceForm((p) => ({ ...p, notes: e.target.value }))}
+              className="ep-input min-h-24"
+            />
           </Field>
 
           <FormActions busy={busy} onCancel={() => setBalanceOpen(false)} />
@@ -428,22 +605,38 @@ function BoxGroupPage() {
       </Modal>
 
       <Modal open={adjustOpen} onClose={() => setAdjustOpen(false)} title="تسوية فعلية للصندوق" subtitle={adjustItem?.name} icon={SlidersHorizontal}>
-        <form onSubmit={submitAdjustment} className="space-y-4">
-          <Field label="نوع التسوية">
-            <select value={adjustForm.type} onChange={(e) => setAdjustForm((p) => ({ ...p, type: e.target.value }))} className="ep-input">
+        <form onSubmit={submitAdjustment} className="space-y-4" noValidate>
+          <Field label="نوع التسوية" error={adjustErrors.adjustment_type}>
+            <select
+              value={adjustForm.adjustment_type}
+              onChange={(e) => updateAdjustField("adjustment_type", e.target.value)}
+              className={`ep-input ${adjustErrors.adjustment_type ? "border-rose-300 bg-rose-50 focus:border-rose-400 focus:ring-rose-100" : ""}`}
+            >
+              <option value="">اختر نوع التسوية</option>
               <option value="increase">زيادة الرصيد</option>
               <option value="decrease">خصم من الرصيد</option>
-              <option value="add">إضافة</option>
-              <option value="subtract">خصم</option>
             </select>
           </Field>
 
-          <Field label="المبلغ">
-            <input required type="number" step="0.0001" value={adjustForm.amount} onChange={(e) => setAdjustForm((p) => ({ ...p, amount: e.target.value }))} className="ep-input" />
+          <Field label={`المبلغ${adjustItem?.currency ? ` (${adjustItem.currency})` : ""}`} error={adjustErrors.amount}>
+            <input
+              type="number"
+              step="0.0001"
+              min="0"
+              value={adjustForm.amount}
+              onChange={(e) => updateAdjustField("amount", e.target.value)}
+              className={`ep-input ${adjustErrors.amount ? "border-rose-300 bg-rose-50 focus:border-rose-400 focus:ring-rose-100" : ""}`}
+              placeholder="أدخل مبلغ التسوية"
+            />
           </Field>
 
-          <Field label="سبب التسوية">
-            <textarea required value={adjustForm.reason} onChange={(e) => setAdjustForm((p) => ({ ...p, reason: e.target.value }))} className="ep-input min-h-24" placeholder="مثال: فرق جرد يومي أو تصحيح رصيد فعلي" />
+          <Field label="سبب التسوية" error={adjustErrors.reason}>
+            <textarea
+              value={adjustForm.reason}
+              onChange={(e) => updateAdjustField("reason", e.target.value)}
+              className={`ep-input min-h-24 ${adjustErrors.reason ? "border-rose-300 bg-rose-50 focus:border-rose-400 focus:ring-rose-100" : ""}`}
+              placeholder="مثال: فرق جرد يومي أو تصحيح رصيد فعلي"
+            />
           </Field>
 
           <FormActions busy={busy} onCancel={() => setAdjustOpen(false)} />
@@ -453,7 +646,9 @@ function BoxGroupPage() {
       <Modal open={adjustmentsOpen} onClose={() => setAdjustmentsOpen(false)} title="سجل التسويات" subtitle={adjustmentsItem?.name} icon={ClipboardList} size="xl">
         {adjustmentsLoading ? (
           <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="ep-skeleton h-12" />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="ep-skeleton h-12" />
+            ))}
           </div>
         ) : adjustments.length === 0 ? (
           <EmptyState title="لا يوجد تسويات" />
@@ -501,7 +696,9 @@ function BoxGroupPage() {
       <Modal open={logsOpen} onClose={() => setLogsOpen(false)} title="سجل الحركة" subtitle={logsItem?.name} icon={History} size="xl">
         {logsLoading ? (
           <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="ep-skeleton h-12" />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="ep-skeleton h-12" />
+            ))}
           </div>
         ) : logs.length === 0 ? (
           <EmptyState title="لا يوجد حركات" />
@@ -544,7 +741,9 @@ function BoxGroupPage() {
       <Modal open={operationsOpen} onClose={() => setOperationsOpen(false)} title="عمليات الحساب" subtitle={operationsItem?.name} icon={ArrowRightLeft} size="xl">
         {operationsLoading ? (
           <div className="space-y-2">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="ep-skeleton h-12" />)}
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="ep-skeleton h-12" />
+            ))}
           </div>
         ) : operations.length === 0 ? (
           <EmptyState title="لا توجد عمليات" description="لا يوجد عمليات مرتبطة بهذا الحساب حتى الآن" />
@@ -602,7 +801,10 @@ function BoxGroupPage() {
 
 function AccountCard({ item, groupType, onEdit, onDelete, onBalance, onLogs, onOperations, onAdjust, onAdjustments }) {
   return (
-    <div onClick={() => onOperations(item)} className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-teal-300 hover:shadow-lg">
+    <div
+      onClick={() => onOperations(item)}
+      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-teal-300 hover:shadow-lg"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
           <button type="button" onClick={() => onEdit(item)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50">
@@ -682,11 +884,16 @@ function StatCard({ title, value, icon: Icon }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, error, children }) {
   return (
     <label className="block text-right">
       <span className="mb-1.5 block text-xs font-bold text-slate-600">{label}</span>
       {children}
+      {error && (
+        <p className="mt-1.5 rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold leading-5 text-rose-700">
+          {error}
+        </p>
+      )}
     </label>
   );
 }
