@@ -4,8 +4,8 @@ import {
   Activity,
   ArrowDown,
   BarChart3,
+  Boxes,
   Calendar,
-  ChartNoAxesColumnIncreasing,
   Database,
   DollarSign,
   Download,
@@ -19,6 +19,7 @@ import {
   UserRound,
   Users,
   Wallet,
+  XCircle,
 } from "lucide-react";
 
 import EmptyState from "../shared/EmptyState";
@@ -30,163 +31,163 @@ import { extractApiError, formatCompactNumber, formatMoney } from "../shared/hel
 
 const REPORT_TYPES = [
   {
-    key: "daily",
+    key: "operations",
     group: "movement",
-    label: "التقرير اليومي",
-    subtitle: "حركة يوم محدد",
+    label: "تقرير العمليات",
+    subtitle: "كل العمليات حسب الفترة",
     icon: Activity,
-    mode: "date",
-    service: "daily",
-    exportType: "daily",
-  },
-  {
-    key: "monthly",
-    group: "movement",
-    label: "التقرير الشهري",
-    subtitle: "حركة شهر كامل",
-    icon: ChartNoAxesColumnIncreasing,
-    mode: "month",
-    service: "monthly",
-    exportType: "monthly",
-  },
-  {
-    key: "usersComparison",
-    group: "movement",
-    label: "مقارنة المستخدمين",
-    subtitle: "مقارنة أداء المستخدمين",
-    icon: Users,
     mode: "range",
-    service: "usersComparison",
-    exportType: "users-comparison",
+    exportType: "operations",
+    exportable: true,
+  },
+  {
+    key: "pending",
+    group: "movement",
+    label: "العمليات المعلقة",
+    subtitle: "العمليات التي لم تكتمل بعد",
+    icon: Loader2,
+    mode: "range",
+    exportType: "pending",
+    exportable: true,
+  },
+  {
+    key: "cancelled",
+    group: "movement",
+    label: "العمليات الملغاة",
+    subtitle: "العمليات التي تم إلغاؤها",
+    icon: XCircle,
+    mode: "range",
+    exportType: "cancelled",
+    exportable: true,
+  },
+  {
+    key: "commissions",
+    group: "profits",
+    label: "تقرير العمولات",
+    subtitle: "عمولات العمليات حسب الفترة",
+    icon: ReceiptText,
+    mode: "range",
+    exportType: "commissions",
+    exportable: true,
   },
   {
     key: "profitSummary",
     group: "profits",
     label: "ملخص الأرباح",
-    subtitle: "أرباح الفترة المحددة",
+    subtitle: "الربح المحقق والعمولات المعلقة",
     icon: DollarSign,
     mode: "range",
-    service: "profitSummary",
-    exportType: "profit-summary",
+    exportType: null,
+    exportable: false,
   },
   {
-    key: "dailyProfit",
-    group: "profits",
-    label: "أرباح يومية",
-    subtitle: "صافي ربح يوم محدد",
-    icon: TrendingUp,
-    mode: "date",
-    service: "dailyProfit",
-    exportType: "daily-profit",
-  },
-  {
-    key: "monthlyProfit",
-    group: "profits",
-    label: "أرباح شهرية",
-    subtitle: "صافي ربح شهر محدد",
-    icon: TrendingUp,
-    mode: "month",
-    service: "monthlyProfit",
-    exportType: "monthly-profit",
-  },
-  {
-    key: "profitByUser",
-    group: "profits",
-    label: "الأرباح حسب المستخدم",
-    subtitle: "تحليل الربح لكل مستخدم",
-    icon: Users,
-    mode: "range",
-    service: "profitByUser",
-    exportType: "profit-by-user",
-  },
-  {
-    key: "profitBySupplier",
-    group: "profits",
-    label: "الأرباح حسب المورد",
-    subtitle: "تحليل الربح حسب المورد",
+    key: "suppliers",
+    group: "parties",
+    label: "تقرير الموردين",
+    subtitle: "تحليل الموردين حسب العمليات",
     icon: UserRound,
     mode: "range",
-    service: "profitBySupplier",
-    exportType: "profit-by-supplier",
+    exportType: "suppliers",
+    exportable: true,
   },
   {
-    key: "capitalReport",
-    group: "finance",
-    label: "تقرير رأس المال",
-    subtitle: "حركة رأس المال",
-    icon: Wallet,
+    key: "customers",
+    group: "parties",
+    label: "تقرير العملاء",
+    subtitle: "تحليل العملاء حسب العمليات",
+    icon: Users,
     mode: "range",
-    service: "capitalReport",
-    exportType: "capital-report",
+    exportType: null,
+    exportable: false,
   },
   {
-    key: "expenseReport",
+    key: "boxes",
     group: "finance",
-    label: "تقرير المصروفات",
-    subtitle: "مصروفات الفترة",
-    icon: ReceiptText,
+    label: "تقرير الصناديق",
+    subtitle: "أرصدة الصناديق وحركتها",
+    icon: Boxes,
     mode: "range",
-    service: "expenseReport",
-    exportType: "expense-report",
+    exportType: null,
+    exportable: false,
   },
   {
-    key: "netWorthReport",
+    key: "dashboardSummary",
     group: "finance",
-    label: "صافي الأرباح",
-    subtitle: "ملخص صافي الأرباح والوضع المالي",
+    label: "ملخص الداشبورد",
+    subtitle: "رأس المال والصناديق وملخص العمليات",
     icon: Database,
-    mode: "none",
-    service: "netWorthReport",
-    exportType: "net-worth-report",
-  },
-  {
-    key: "customerStatement",
-    group: "statement",
-    label: "كشف حساب عميل",
-    subtitle: "كشف حركة عميل محدد",
-    icon: FileText,
-    mode: "customerRange",
-    service: "customerStatement",
-    exportType: "statement",
+    mode: "range",
+    exportType: null,
+    exportable: false,
   },
 ];
 
 const REPORT_GROUPS = [
   {
     key: "movement",
-    label: "تقارير الحركة",
-    subtitle: "اليومي، الشهري، ومقارنة المستخدمين",
+    label: "تقارير العمليات",
+    subtitle: "العمليات، المعلقة، والملغاة",
     icon: BarChart3,
   },
   {
     key: "profits",
     label: "تقارير الأرباح",
-    subtitle: "ملخص، يومي، شهري، حسب المستخدم والمورد",
+    subtitle: "العمولات وملخص الأرباح",
     icon: TrendingUp,
+  },
+  {
+    key: "parties",
+    label: "العملاء والموردون",
+    subtitle: "تقارير العملاء والموردين",
+    icon: Users,
   },
   {
     key: "finance",
     label: "تقارير مالية",
-    subtitle: "رأس المال، المصروفات، صافي الأرباح",
+    subtitle: "الصناديق وملخص الداشبورد",
     icon: Wallet,
-  },
-  {
-    key: "statement",
-    label: "كشف الحساب",
-    subtitle: "كشف حساب عميل محدد",
-    icon: FileText,
   },
 ];
 
-const READY_STATUSES = ["ready", "completed", "done", "success", "finished"];
-const FAIL_STATUSES = ["failed", "error", "cancelled", "canceled"];
+const READY_STATUSES = [
+  "ready",
+  "completed",
+  "complete",
+  "done",
+  "success",
+  "finished",
+  "processed",
+  "generated",
+  "available",
+];
+
+const WORKING_STATUSES = [
+  "queued",
+  "queue",
+  "pending",
+  "processing",
+  "running",
+  "in_progress",
+  "started",
+];
+
+const FAIL_STATUSES = [
+  "failed",
+  "fail",
+  "error",
+  "cancelled",
+  "canceled",
+  "expired",
+];
 
 function getToday() {
   return new Date().toISOString().split("T")[0];
 }
 
-function getCurrentMonth() {
-  return getToday().slice(0, 7);
+function getDefaultDateFrom() {
+  const date = new Date();
+  date.setDate(date.getDate() - 30);
+  return date.toISOString().split("T")[0];
 }
 
 function toNumber(value) {
@@ -199,14 +200,493 @@ function unwrapPayload(res) {
   return response?.data || response || {};
 }
 
-function getExportId(res) {
-  const data = unwrapPayload(res);
-  return data?.job_id || data?.id || data?.export_id || data?.uuid || null;
+function unwrapOperationsList(res) {
+  const payload = unwrapPayload(res);
+
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.operations)) return payload.operations;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.items)) return payload.items;
+
+  return [];
 }
 
-function getExportStatus(res) {
-  const data = unwrapPayload(res);
-  return data?.status || data?.state || "queued";
+function unwrapBoxesList(res) {
+  const payload = unwrapPayload(res);
+
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.boxes)) return payload.boxes;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.items)) return payload.items;
+
+  return [];
+}
+
+function getExportId(res) {
+  return reportsService.getExportJobId(res);
+}
+
+function isMoneyKey(key = "") {
+  const lowered = String(key).toLowerCase();
+
+  return (
+    lowered.includes("amount") ||
+    lowered.includes("balance") ||
+    lowered.includes("profit") ||
+    lowered.includes("expense") ||
+    lowered.includes("total") ||
+    lowered.includes("net") ||
+    lowered.includes("receive") ||
+    lowered.includes("sent") ||
+    lowered.includes("send") ||
+    lowered.includes("commission") ||
+    lowered.includes("capital") ||
+    lowered.includes("worth") ||
+    lowered.includes("incoming") ||
+    lowered.includes("outgoing")
+  );
+}
+
+function getOperationDate(operation) {
+  return String(
+    operation?.transaction_date ||
+      operation?.created_at ||
+      operation?.date ||
+      ""
+  ).slice(0, 10);
+}
+
+function isBetweenDates(date, from, to) {
+  if (!date) return false;
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+}
+
+function getEntityName(entity, fallback = "—") {
+  if (!entity) return fallback;
+  if (typeof entity === "object") return entity?.name || entity?.title || entity?.label || fallback;
+  return entity;
+}
+
+function getTransferAmount(operation) {
+  return toNumber(
+    operation?.amount ??
+      operation?.total_transferred_amount ??
+      operation?.transferred_amount ??
+      operation?.supplier_amount ??
+      operation?.customer_amount ??
+      0
+  );
+}
+
+function getCustomerAmount(operation) {
+  return toNumber(operation?.customer_amount ?? operation?.amount ?? operation?.transferred_amount ?? 0);
+}
+
+function getSupplierAmount(operation) {
+  return toNumber(operation?.supplier_amount ?? operation?.amount ?? operation?.transferred_amount ?? 0);
+}
+
+function getCommissionAmount(operation) {
+  return toNumber(operation?.commission ?? operation?.commission_amount ?? 0);
+}
+
+function normalizeOperationRow(operation) {
+  const transferAmount = getTransferAmount(operation);
+  const supplierAmount = getSupplierAmount(operation);
+  const customerAmount = getCustomerAmount(operation);
+  const commission = getCommissionAmount(operation);
+  const customerNet = toNumber(operation?.customer_net_amount ?? customerAmount - commission);
+
+  return {
+    id: operation?.id,
+    reference_number: operation?.reference_number || `#${operation?.id || "—"}`,
+    transaction_date: getOperationDate(operation),
+    supplier: getEntityName(operation?.supplier, operation?.supplier_name || "—"),
+    customer: getEntityName(operation?.customer, operation?.customer_name || "—"),
+    box: getEntityName(operation?.box, operation?.box_name || "—"),
+    status: operation?.status || "—",
+    amount: transferAmount,
+    supplier_amount: supplierAmount,
+    customer_amount: customerAmount,
+    customer_net_amount: customerNet,
+    commission,
+    commission_amount: commission,
+    commission_type: operation?.commission_type || "—",
+    commission_rate: operation?.commission_rate ?? "—",
+    created_at: operation?.created_at,
+    completed_at: operation?.completed_at,
+    cancelled_at: operation?.cancelled_at,
+    cancellation_reason: operation?.cancellation_reason,
+  };
+}
+
+function statusIs(row, status) {
+  return String(row?.status || "").toLowerCase() === status;
+}
+
+function isCancelled(row) {
+  return statusIs(row, "cancelled") || statusIs(row, "canceled");
+}
+
+function aggregateRows(rows) {
+  const completedRows = rows.filter((row) => statusIs(row, "completed"));
+  const pendingRows = rows.filter((row) => statusIs(row, "pending"));
+  const cancelledRows = rows.filter((row) => isCancelled(row));
+
+  const totalAmount = rows.reduce((sum, row) => sum + toNumber(row.amount), 0);
+  const supplierAmount = rows.reduce((sum, row) => sum + toNumber(row.supplier_amount), 0);
+  const customerAmount = rows.reduce((sum, row) => sum + toNumber(row.customer_amount), 0);
+  const customerNet = rows.reduce((sum, row) => sum + toNumber(row.customer_net_amount), 0);
+  const commission = rows.reduce((sum, row) => sum + toNumber(row.commission), 0);
+
+  return {
+    total_operations: rows.length,
+    completed: completedRows.length,
+    pending: pendingRows.length,
+    cancelled: cancelledRows.length,
+
+    total_transferred_amount: totalAmount,
+    total_supplier_amount: supplierAmount,
+    total_customer_amount: customerAmount,
+    total_customer_net_amount: customerNet,
+    total_commission: commission,
+
+    completed_amount: completedRows.reduce((sum, row) => sum + toNumber(row.amount), 0),
+    pending_amount: pendingRows.reduce((sum, row) => sum + toNumber(row.amount), 0),
+    cancelled_amount: cancelledRows.reduce((sum, row) => sum + toNumber(row.amount), 0),
+
+    completed_commission: completedRows.reduce((sum, row) => sum + toNumber(row.commission), 0),
+    pending_commission: pendingRows.reduce((sum, row) => sum + toNumber(row.commission), 0),
+    cancelled_commission: cancelledRows.reduce((sum, row) => sum + toNumber(row.commission), 0),
+  };
+}
+
+function groupByKey(rows, getKey, makeRow) {
+  const map = new Map();
+
+  rows.forEach((row) => {
+    const key = getKey(row);
+    if (!key || key === "—") return;
+
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+  });
+
+  return Array.from(map.entries()).map(([key, items]) => makeRow(key, items));
+}
+
+function normalizeBoxRow(box, operationRows = []) {
+  const boxName = getEntityName(box, box?.name || "—");
+  const relatedRows = operationRows.filter((row) => row.box === boxName);
+  const totals = aggregateRows(relatedRows);
+
+  return {
+    box_id: box?.id || box?.box_id,
+    box: boxName,
+    type: box?.type || "—",
+    current_balance: toNumber(box?.current_balance ?? box?.balance ?? 0),
+    operations_count: relatedRows.length,
+    incoming_amount: totals.total_customer_amount,
+    outgoing_amount: totals.total_supplier_amount,
+    last_operation:
+      box?.last_activity_date ||
+      [...relatedRows].sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date)))?.[0]?.transaction_date ||
+      null,
+  };
+}
+
+function buildOperationsPayload(report, allOperations, financial, boxes, params) {
+  const allRows = allOperations
+    .map(normalizeOperationRow)
+    .filter((row) => isBetweenDates(row.transaction_date, params.date_from, params.date_to));
+
+  const pendingRows = allRows.filter((row) => statusIs(row, "pending"));
+  const cancelledRows = allRows.filter((row) => isCancelled(row));
+
+  if (report.key === "pending") {
+    const totals = aggregateRows(pendingRows);
+
+    return {
+      type: "pending",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      operations: pendingRows,
+      ...totals,
+      meta: {
+        total: pendingRows.length,
+        count: pendingRows.length,
+      },
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "cancelled") {
+    const totals = aggregateRows(cancelledRows);
+
+    return {
+      type: "cancelled",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      operations: cancelledRows,
+      ...totals,
+      meta: {
+        total: cancelledRows.length,
+        count: cancelledRows.length,
+      },
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "commissions") {
+    const rowsWithCommission = allRows.filter((row) => toNumber(row.commission) > 0);
+    const totals = aggregateRows(rowsWithCommission);
+
+    return {
+      type: "commissions",
+      title: report.label,
+      currency: "USD",
+      period: "custom",
+      date_from: params.date_from,
+      date_to: params.date_to,
+      operations: rowsWithCommission,
+      total_commission: totals.total_commission,
+      completed_commission: totals.completed_commission,
+      pending_commission: totals.pending_commission,
+      cancelled_commission: totals.cancelled_commission,
+      average_commission: rowsWithCommission.length ? totals.total_commission / rowsWithCommission.length : 0,
+      operation_count: rowsWithCommission.length,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "profitSummary") {
+    const totals = aggregateRows(allRows);
+
+    return {
+      type: "profit-summary",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      rows: [
+        {
+          total_operations: totals.total_operations,
+          completed_operations: totals.completed,
+          pending_operations: totals.pending,
+          cancelled_operations: totals.cancelled,
+          realized_profit_usd: totals.completed_commission,
+          pending_commission: totals.pending_commission,
+          cancelled_commission: totals.cancelled_commission,
+          total_commission: totals.total_commission,
+          total_transferred_amount: totals.total_transferred_amount,
+        },
+      ],
+      total_operations: totals.total_operations,
+      total_profit: totals.completed_commission,
+      total_profit_usd: totals.completed_commission,
+      pending_commission: totals.pending_commission,
+      cancelled_commission: totals.cancelled_commission,
+      total_commission: totals.total_commission,
+      completed_operations: totals.completed,
+      pending_operations: totals.pending,
+      cancelled_operations: totals.cancelled,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "suppliers") {
+    const rows = groupByKey(
+      allRows,
+      (row) => row.supplier,
+      (supplier, items) => {
+        const totals = aggregateRows(items);
+
+        return {
+          supplier,
+          operation_count: items.length,
+          completed_count: totals.completed,
+          pending_count: totals.pending,
+          cancelled_count: totals.cancelled,
+          transferred_amount: totals.total_transferred_amount,
+          supplier_amount: totals.total_supplier_amount,
+          total_commissions: totals.total_commission,
+        };
+      }
+    );
+
+    return {
+      type: "suppliers",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      rows,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "customers") {
+    const rows = groupByKey(
+      allRows,
+      (row) => row.customer,
+      (customer, items) => {
+        const totals = aggregateRows(items);
+        const sorted = [...items].sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date)));
+
+        return {
+          customer,
+          operation_count: items.length,
+          total_received_amount: totals.total_customer_net_amount,
+          total_sent_amount: totals.total_customer_amount,
+          total_commissions: totals.total_commission,
+          last_operation: sorted[0]?.transaction_date || null,
+        };
+      }
+    );
+
+    return {
+      type: "customers",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      rows,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "boxes") {
+    const boxRows = boxes.map((box) => normalizeBoxRow(box, allRows));
+    const totalBoxesBalance = boxRows.reduce((sum, box) => sum + toNumber(box.current_balance), 0);
+    const operationsCount = boxRows.reduce((sum, box) => sum + toNumber(box.operations_count), 0);
+    const incoming = boxRows.reduce((sum, box) => sum + toNumber(box.incoming_amount), 0);
+    const outgoing = boxRows.reduce((sum, box) => sum + toNumber(box.outgoing_amount), 0);
+
+    return {
+      type: "boxes",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      rows: boxRows,
+      boxes_count: boxRows.length,
+      total_boxes_balance: totalBoxesBalance,
+      operations_count: operationsCount,
+      incoming_amount: incoming,
+      outgoing_amount: outgoing,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (report.key === "dashboardSummary") {
+    const totals = aggregateRows(allRows);
+    const totalBoxesBalance =
+      toNumber(financial?.total_boxes_balance) ||
+      boxes.reduce((sum, box) => sum + toNumber(box.current_balance ?? box.balance), 0);
+
+    return {
+      type: "dashboardSummary",
+      title: report.label,
+      date_from: params.date_from,
+      date_to: params.date_to,
+      rows: [
+        {
+          capital_balance: toNumber(financial?.capital_balance),
+          free_capital: toNumber(financial?.free_capital),
+          total_boxes_balance: totalBoxesBalance,
+          total_operations: totals.total_operations,
+          completed_operations: totals.completed,
+          pending_operations: totals.pending,
+          cancelled_operations: totals.cancelled,
+          total_commission: totals.total_commission,
+          completed_commission: totals.completed_commission,
+          pending_commission: totals.pending_commission,
+          total_transferred_amount: totals.total_transferred_amount,
+        },
+      ],
+      capital_balance: toNumber(financial?.capital_balance),
+      free_capital: toNumber(financial?.free_capital),
+      total_boxes_balance: totalBoxesBalance,
+      total_operations: totals.total_operations,
+      completed_operations: totals.completed,
+      pending_operations: totals.pending,
+      cancelled_operations: totals.cancelled,
+      total_commission: totals.total_commission,
+      completed_commission: totals.completed_commission,
+      pending_commission: totals.pending_commission,
+      total_transferred_amount: totals.total_transferred_amount,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  const totals = aggregateRows(allRows);
+
+  return {
+    type: "operations",
+    title: report.label,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    operations: allRows,
+    ...totals,
+    meta: {
+      total: allRows.length,
+      count: allRows.length,
+    },
+    generated_at: new Date().toISOString(),
+  };
+}
+
+function getRowsFromPayload(payload = {}) {
+  if (Array.isArray(payload)) return payload;
+
+  const keys = ["operations", "rows", "items", "suppliers", "customers", "boxes", "commissions"];
+
+  for (const key of keys) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+
+  return [];
+}
+
+function firstValue(payload = {}, keys = [], fallback = 0) {
+  const totals = payload?.totals || {};
+  const meta = payload?.meta || {};
+
+  for (const key of keys) {
+    const value = payload?.[key] ?? totals?.[key] ?? meta?.[key];
+
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+
+  return fallback;
+}
+
+function sumRows(payload = {}, keys = []) {
+  const rows = getRowsFromPayload(payload);
+
+  return rows.reduce((sum, row) => {
+    for (const key of keys) {
+      if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== "") {
+        return sum + toNumber(row[key]);
+      }
+    }
+
+    return sum;
+  }, 0);
+}
+
+function rowsCount(payload = {}) {
+  const rows = getRowsFromPayload(payload);
+
+  return toNumber(
+    firstValue(
+      payload,
+      ["total_operations", "operation_count", "operations_count", "count", "boxes_count"],
+      payload?.meta?.total ?? payload?.meta?.count ?? rows.length
+    )
+  );
 }
 
 function labelOf(key) {
@@ -214,41 +694,68 @@ function labelOf(key) {
     id: "الرقم",
     type: "النوع",
     title: "العنوان",
+    period: "الفترة",
+    currency: "العملة",
     date: "التاريخ",
+    transaction_date: "تاريخ العملية",
     date_from: "من تاريخ",
     date_to: "إلى تاريخ",
     generated_at: "وقت الإنشاء",
-    month: "الشهر",
-    year: "السنة",
-    user: "المستخدم",
-    user_name: "المستخدم",
-    customer: "العميل",
-    customer_name: "العميل",
-    supplier: "المورد",
-    supplier_name: "المورد",
-    receive: "الداخل",
-    send: "الخارج",
-    net: "الصافي",
-    count: "العدد",
-    amount: "المبلغ",
-    profit: "الربح",
-    total_profit_usd: "إجمالي الربح",
-    total_operations: "إجمالي العمليات",
-    completed_operations: "مكتملة",
-    pending_operations: "معلقة",
-    cancelled_operations: "ملغاة",
-    capital_balance: "رصيد رأس المال",
-    free_capital: "رأس المال الحر",
-    boxes_total_balance: "إجمالي الصناديق",
-    net_worth: "صافي الأرباح",
-    currency: "العملة",
-    currency_code: "العملة",
-    status: "الحالة",
-    reference_number: "الرقم المرجعي",
     created_at: "تاريخ الإنشاء",
+    updated_at: "تاريخ التحديث",
+    completed_at: "تاريخ الإكمال",
+    cancelled_at: "تاريخ الإلغاء",
+    cancellation_reason: "سبب الإلغاء",
+
+    reference_number: "الرقم المرجعي",
+    status: "الحالة",
+    supplier: "المورد",
+    customer: "العميل",
+    box: "الصندوق",
+
+    amount: "المبلغ",
+    transferred_amount: "المبلغ المحول",
+    total_transferred_amount: "إجمالي المبلغ",
+    total_received_amount: "إجمالي المستلم",
+    total_sent_amount: "إجمالي المرسل",
+    supplier_amount: "مبلغ المورد",
+    customer_amount: "مبلغ العميل",
+    customer_net_amount: "صافي العميل",
+
+    commission: "العمولة",
+    commission_amount: "العمولة",
+    total_commission: "إجمالي العمولات",
+    total_commissions: "إجمالي العمولات",
+    completed_commission: "عمولات مكتملة",
+    pending_commission: "عمولات معلقة",
+    cancelled_commission: "عمولات ملغاة",
+    average_commission: "متوسط العمولة",
+
+    operation_count: "عدد العمليات",
+    operations_count: "عدد العمليات",
+    total_operations: "إجمالي العمليات",
+    completed: "مكتملة",
+    completed_count: "مكتملة",
+    completed_operations: "عمليات مكتملة",
+    pending: "معلقة",
+    pending_count: "معلقة",
+    pending_operations: "عمليات معلقة",
+    cancelled: "ملغاة",
+    cancelled_count: "ملغاة",
+    cancelled_operations: "عمليات ملغاة",
+
+    current_balance: "الرصيد الحالي",
+    total_boxes_balance: "إجمالي الصناديق",
+    capital_balance: "رأس المال",
+    free_capital: "رأس المال الحر",
+    incoming_amount: "الداخل",
+    outgoing_amount: "الخارج",
+    last_operation: "آخر عملية",
+    realized_profit_usd: "الربح المحقق",
+    total_profit_usd: "الربح المحقق",
   };
 
-  return labels[key] || key.replaceAll("_", " ");
+  return labels[key] || String(key).replaceAll("_", " ");
 }
 
 function formatDate(value) {
@@ -279,29 +786,43 @@ function formatDateTime(value) {
   });
 }
 
+function formatStatus(value) {
+  const statuses = {
+    pending: "معلقة",
+    completed: "مكتملة",
+    cancelled: "ملغاة",
+    canceled: "ملغاة",
+    ready: "جاهز",
+    queued: "بالانتظار",
+    processing: "قيد المعالجة",
+    failed: "فشل",
+  };
+
+  return statuses[value] || value;
+}
+
 function formatCell(value, key = "") {
   if (value === null || value === undefined || value === "") return "—";
 
+  if (key === "status") return formatStatus(String(value));
   if (key.includes("_at")) return formatDateTime(value);
-  if (key.includes("date")) return formatDate(value);
+  if (key.includes("date") || key === "last_operation") return formatDate(value);
 
   if (typeof value === "boolean") return value ? "نعم" : "لا";
 
   if (typeof value === "number") {
-    if (
-      key.includes("amount") ||
-      key.includes("balance") ||
-      key.includes("profit") ||
-      key.includes("expense") ||
-      key.includes("total") ||
-      key.includes("net") ||
-      key.includes("receive") ||
-      key.includes("send")
-    ) {
-      return formatMoney(value);
+    if (isMoneyKey(key)) return formatMoney(value);
+    return value.toLocaleString();
+  }
+
+  if (typeof value === "string") {
+    const numeric = Number(value);
+
+    if (Number.isFinite(numeric) && value.trim() !== "" && isMoneyKey(key)) {
+      return formatMoney(numeric);
     }
 
-    return value.toLocaleString();
+    return value;
   }
 
   if (typeof value === "object") {
@@ -313,10 +834,7 @@ function formatCell(value, key = "") {
 
 function getModeLabel(mode) {
   const labels = {
-    date: "فلتر يوم",
-    month: "فلتر شهر",
     range: "فلتر فترة",
-    customerRange: "عميل وفترة",
     none: "بدون فلتر",
   };
 
@@ -325,13 +843,13 @@ function getModeLabel(mode) {
 
 function getTableSections(payload) {
   const sections = [
-    ["transactions", "المعاملات"],
-    ["rows", "السجلات"],
-    ["daily_totals", "الحركة اليومية"],
-    ["by_currency", "حسب العملة"],
-    ["by_type", "حسب النوع"],
-    ["expenses", "المصروفات"],
     ["operations", "العمليات"],
+    ["rows", "السجلات"],
+    ["items", "العناصر"],
+    ["suppliers", "الموردون"],
+    ["customers", "العملاء"],
+    ["boxes", "الصناديق"],
+    ["commissions", "العمولات"],
   ];
 
   return sections
@@ -355,25 +873,45 @@ function getColumns(rows = []) {
   });
 
   const priority = [
-    "id",
-    "date",
-    "created_at",
-    "name",
-    "user_name",
-    "customer_name",
-    "supplier_name",
-    "type",
-    "currency",
-    "currency_code",
-    "amount",
-    "receive",
-    "send",
-    "net",
-    "profit",
-    "total_profit_usd",
-    "balance",
-    "status",
     "reference_number",
+    "transaction_date",
+    "created_at",
+    "supplier",
+    "customer",
+    "box",
+    "type",
+    "status",
+    "amount",
+    "supplier_amount",
+    "customer_amount",
+    "customer_net_amount",
+    "commission",
+    "commission_amount",
+    "commission_type",
+    "commission_rate",
+    "operation_count",
+    "operations_count",
+    "total_operations",
+    "completed",
+    "completed_count",
+    "completed_operations",
+    "pending",
+    "pending_count",
+    "pending_operations",
+    "cancelled",
+    "cancelled_count",
+    "cancelled_operations",
+    "transferred_amount",
+    "total_received_amount",
+    "total_sent_amount",
+    "total_commissions",
+    "current_balance",
+    "incoming_amount",
+    "outgoing_amount",
+    "last_operation",
+    "cancelled_at",
+    "cancellation_reason",
+    "id",
   ];
 
   return keys
@@ -387,7 +925,7 @@ function getColumns(rows = []) {
 
       return ai - bi;
     })
-    .slice(0, 9);
+    .slice(0, 12);
 }
 
 function makeCard(title, value, icon, color, kind = "money", note = "") {
@@ -395,101 +933,101 @@ function makeCard(title, value, icon, color, kind = "money", note = "") {
 }
 
 function buildCards(reportKey, payload = {}) {
-  const totals = payload?.totals || {};
-
-  if (["daily", "monthly", "usersComparison"].includes(reportKey)) {
+  if (reportKey === "operations") {
     return [
-      makeCard("إجمالي الداخل", totals.receive ?? payload.receive ?? 0, DollarSign, "emerald"),
-      makeCard("إجمالي الخارج", totals.send ?? payload.send ?? 0, ArrowDown, "rose"),
-      makeCard("الصافي", totals.net ?? payload.net ?? 0, TrendingUp, "blue"),
-      makeCard("عدد المعاملات", totals.count ?? payload.count ?? 0, Activity, "violet", "count"),
+      makeCard("إجمالي العمليات", firstValue(payload, ["total_operations"], 0), Activity, "blue", "count"),
+      makeCard("قيمة العمليات", firstValue(payload, ["total_transferred_amount"], 0), DollarSign, "emerald"),
+      makeCard("مكتملة", firstValue(payload, ["completed"], 0), Activity, "violet", "count"),
+      makeCard("معلقة", firstValue(payload, ["pending"], 0), Loader2, "amber", "count"),
+    ];
+  }
+
+  if (reportKey === "pending") {
+    return [
+      makeCard("عمليات معلقة", firstValue(payload, ["total_operations"], 0), Loader2, "amber", "count"),
+      makeCard("قيمة المعلق", firstValue(payload, ["total_transferred_amount", "pending_amount"], 0), DollarSign, "rose"),
+      makeCard("عمولات معلقة", firstValue(payload, ["total_commission", "pending_commission"], 0), ReceiptText, "violet"),
+      makeCard("عدد السجلات", payload?.meta?.count ?? getRowsFromPayload(payload).length, Activity, "blue", "count"),
+    ];
+  }
+
+  if (reportKey === "cancelled") {
+    return [
+      makeCard("عمليات ملغاة", firstValue(payload, ["total_operations"], 0), XCircle, "rose", "count"),
+      makeCard("قيمة الملغاة", firstValue(payload, ["total_transferred_amount", "cancelled_amount"], 0), DollarSign, "rose"),
+      makeCard("عمولات ملغاة", firstValue(payload, ["total_commission", "cancelled_commission"], 0), ReceiptText, "violet"),
+      makeCard("عدد السجلات", payload?.meta?.count ?? getRowsFromPayload(payload).length, Activity, "blue", "count"),
+    ];
+  }
+
+  if (reportKey === "commissions") {
+    return [
+      makeCard("إجمالي العمولات", firstValue(payload, ["total_commission"], 0), DollarSign, "emerald"),
+      makeCard("عمولات مكتملة", firstValue(payload, ["completed_commission"], 0), ReceiptText, "blue"),
+      makeCard("عمولات معلقة", firstValue(payload, ["pending_commission"], 0), Loader2, "amber"),
+      makeCard("عدد العمليات", firstValue(payload, ["operation_count"], 0), Activity, "violet", "count"),
     ];
   }
 
   if (reportKey === "profitSummary") {
     return [
-      makeCard("إجمالي الربح", payload.total_profit_usd ?? 0, DollarSign, "emerald"),
-      makeCard("إجمالي العمليات", payload.total_operations ?? 0, Activity, "blue", "count"),
-      makeCard("عمليات معلقة", payload.pending_operations ?? 0, Activity, "amber", "count"),
-      makeCard("عمليات مكتملة", payload.completed_operations ?? 0, TrendingUp, "violet", "count"),
+      makeCard("الربح المحقق", firstValue(payload, ["total_profit_usd", "total_profit"], 0), DollarSign, "emerald"),
+      makeCard("عمولات معلقة", firstValue(payload, ["pending_commission"], 0), ReceiptText, "amber"),
+      makeCard("إجمالي العمليات", firstValue(payload, ["total_operations"], 0), Activity, "blue", "count"),
+      makeCard("عمليات مكتملة", firstValue(payload, ["completed_operations"], 0), TrendingUp, "violet", "count"),
     ];
   }
 
-  if (["dailyProfit", "monthlyProfit", "profitByUser", "profitBySupplier"].includes(reportKey)) {
+  if (reportKey === "suppliers") {
+    const rows = getRowsFromPayload(payload);
+
     return [
-      makeCard("إجمالي الربح", payload.total_profit_usd ?? 0, DollarSign, "emerald"),
-      makeCard("عدد السجلات", Array.isArray(payload.rows) ? payload.rows.length : 0, Activity, "violet", "count"),
-      makeCard("من تاريخ", payload.date_from || payload.date || "—", Calendar, "blue", "text"),
-      makeCard("إلى تاريخ", payload.date_to || payload.date || "—", Calendar, "amber", "text"),
+      makeCard("عدد الموردين", rows.length, UserRound, "violet", "count"),
+      makeCard("إجمالي مبلغ الموردين", sumRows(payload, ["transferred_amount", "supplier_amount"]), ArrowDown, "rose"),
+      makeCard("إجمالي العمولات", sumRows(payload, ["total_commissions"]), ReceiptText, "emerald"),
+      makeCard("عدد العمليات", sumRows(payload, ["operation_count"]), Activity, "blue", "count"),
     ];
   }
 
-  if (reportKey === "capitalReport") {
+  if (reportKey === "customers") {
+    const rows = getRowsFromPayload(payload);
+
     return [
-      makeCard("رصيد رأس المال", payload.capital_balance ?? 0, Wallet, "emerald"),
-      makeCard("رأس المال الحر", payload.free_capital ?? 0, DollarSign, "blue"),
-      makeCard("أنواع الحركة", Array.isArray(payload.by_type) ? payload.by_type.length : 0, Activity, "violet", "count"),
-      makeCard("عدد السجلات", Array.isArray(payload.transactions) ? payload.transactions.length : 0, FileText, "amber", "count"),
+      makeCard("عدد العملاء", rows.length, Users, "violet", "count"),
+      makeCard("إجمالي المستلم", sumRows(payload, ["total_received_amount"]), DollarSign, "emerald"),
+      makeCard("إجمالي المرسل", sumRows(payload, ["total_sent_amount"]), ArrowDown, "rose"),
+      makeCard("عدد العمليات", sumRows(payload, ["operation_count"]), Activity, "blue", "count"),
     ];
   }
 
-  if (reportKey === "expenseReport") {
+  if (reportKey === "boxes") {
     return [
-      makeCard("إجمالي المصروفات", payload.total_expenses ?? payload.expenses_total ?? 0, ReceiptText, "rose"),
-      makeCard(
-        "عدد المصروفات",
-        Array.isArray(payload.expenses)
-          ? payload.expenses.length
-          : Array.isArray(payload.rows)
-            ? payload.rows.length
-            : payload.count ?? 0,
-        Activity,
-        "violet",
-        "count"
-      ),
-      makeCard("من تاريخ", payload.date_from || "—", Calendar, "blue", "text"),
-      makeCard("إلى تاريخ", payload.date_to || "—", Calendar, "amber", "text"),
+      makeCard("عدد الصناديق", firstValue(payload, ["boxes_count"], getRowsFromPayload(payload).length), Boxes, "violet", "count"),
+      makeCard("إجمالي الأرصدة", firstValue(payload, ["total_boxes_balance"], 0), Wallet, "emerald"),
+      makeCard("عدد عمليات الصناديق", firstValue(payload, ["operations_count"], 0), Activity, "blue", "count"),
+      makeCard("إجمالي الخارج", firstValue(payload, ["outgoing_amount"], 0), ArrowDown, "rose"),
     ];
   }
 
-  if (reportKey === "netWorthReport") {
+  if (reportKey === "dashboardSummary") {
     return [
-      makeCard("صافي الأرباح", payload.net_worth ?? 0, TrendingUp, "emerald"),
-      makeCard("إجمالي الصناديق", payload.boxes_total_balance ?? 0, Wallet, "blue"),
-      makeCard("رصيد رأس المال", payload.capital_balance ?? 0, DollarSign, "violet"),
-      makeCard("رأس المال الحر", payload.free_capital ?? 0, Database, "amber"),
-    ];
-  }
-
-  if (reportKey === "customerStatement") {
-    return [
-      makeCard("إجمالي الداخل", payload.total_receive ?? payload.receive ?? totals.receive ?? 0, DollarSign, "emerald"),
-      makeCard("إجمالي الخارج", payload.total_send ?? payload.send ?? totals.send ?? 0, ArrowDown, "rose"),
-      makeCard("الرصيد / الصافي", payload.balance ?? payload.net ?? totals.net ?? 0, TrendingUp, "blue"),
-      makeCard(
-        "عدد السجلات",
-        Array.isArray(payload.transactions)
-          ? payload.transactions.length
-          : Array.isArray(payload.rows)
-            ? payload.rows.length
-            : payload.count ?? 0,
-        Activity,
-        "violet",
-        "count"
-      ),
+      makeCard("رأس المال", firstValue(payload, ["capital_balance"], 0), Wallet, "emerald"),
+      makeCard("الصناديق", firstValue(payload, ["total_boxes_balance"], 0), Boxes, "blue"),
+      makeCard("إجمالي العمليات", firstValue(payload, ["total_operations"], 0), Activity, "violet", "count"),
+      makeCard("إجمالي العمولات", firstValue(payload, ["total_commission"], 0), ReceiptText, "amber"),
     ];
   }
 
   return [
-    makeCard("إجمالي الداخل", 0, DollarSign, "emerald"),
-    makeCard("إجمالي الخارج", 0, ArrowDown, "rose"),
-    makeCard("الصافي", 0, TrendingUp, "blue"),
-    makeCard("عدد السجلات", 0, Activity, "violet", "count"),
+    makeCard("إجمالي", rowsCount(payload), Activity, "blue", "count"),
+    makeCard("القيمة", firstValue(payload, ["amount", "total_amount", "net"], 0), DollarSign, "emerald"),
+    makeCard("من تاريخ", payload.date_from || "—", Calendar, "violet", "text"),
+    makeCard("إلى تاريخ", payload.date_to || "—", Calendar, "amber", "text"),
   ];
 }
 
 function getInfoItems(payload = {}) {
-  const keys = ["title", "type", "date", "date_from", "date_to", "month", "year", "generated_at"];
+  const keys = ["title", "type", "currency", "period", "date_from", "date_to", "generated_at"];
 
   return keys
     .filter((key) => payload?.[key] !== undefined && payload?.[key] !== null && payload?.[key] !== "")
@@ -503,6 +1041,7 @@ function getInfoItems(payload = {}) {
 function displayCardValue(card) {
   if (card.kind === "money") return formatMoney(toNumber(card.value));
   if (card.kind === "count") return formatCompactNumber(toNumber(card.value));
+
   if (card.kind === "text") {
     if (String(card.title).includes("تاريخ")) return formatDate(card.value);
     return String(card.value || "—");
@@ -514,16 +1053,12 @@ function displayCardValue(card) {
 export default function ReportsPage() {
   const toast = useToast();
   const today = getToday();
-  const currentMonth = getCurrentMonth();
   const pollTimerRef = useRef(null);
 
   const [activeGroupKey, setActiveGroupKey] = useState("movement");
-  const [activeReportKey, setActiveReportKey] = useState("daily");
-  const [date, setDate] = useState(today);
-  const [month, setMonth] = useState(currentMonth);
-  const [dateFrom, setDateFrom] = useState(today);
+  const [activeReportKey, setActiveReportKey] = useState("operations");
+  const [dateFrom, setDateFrom] = useState(getDefaultDateFrom());
   const [dateTo, setDateTo] = useState(today);
-  const [customerId, setCustomerId] = useState("");
 
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -553,14 +1088,7 @@ export default function ReportsPage() {
   const ActiveGroupIcon = activeGroup.icon || Layers3;
 
   function buildParams(report = activeReport) {
-    if (report.mode === "date") return { date };
-
-    if (report.mode === "month") {
-      const [year, selectedMonth] = month.split("-");
-      return { year, month: selectedMonth };
-    }
-
-    if (report.mode === "range" || report.mode === "customerRange") {
+    if (report.mode === "range") {
       return { date_from: dateFrom, date_to: dateTo };
     }
 
@@ -568,27 +1096,25 @@ export default function ReportsPage() {
   }
 
   async function load() {
-    if (activeReport.mode === "customerRange" && !customerId.trim()) {
-      setPayload(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
     try {
       const params = buildParams(activeReport);
-      let res;
 
-      if (activeReport.mode === "customerRange") {
-        res = await reportsService.customerStatement(customerId.trim(), params);
-      } else {
-        res = await reportsService[activeReport.service](params);
-      }
+      const [operationsRes, financialRes, boxesRes] = await Promise.all([
+        reportsService.operationsRaw(),
+        reportsService.dashboardFinancial().catch(() => ({ data: {} })),
+        reportsService.dashboardBoxes().catch(() => ({ data: [] })),
+      ]);
 
-      setPayload(unwrapPayload(res));
+      const operations = unwrapOperationsList(operationsRes);
+      const financial = unwrapPayload(financialRes);
+      const boxes = unwrapBoxesList(boxesRes);
+
+      const computedPayload = buildOperationsPayload(activeReport, operations, financial, boxes, params);
+
+      setPayload(computedPayload);
     } catch (err) {
       setPayload(null);
       setError(err);
@@ -609,7 +1135,7 @@ export default function ReportsPage() {
     const firstReport = REPORT_TYPES.find((item) => item.group === groupKey);
 
     setActiveGroupKey(groupKey);
-    setActiveReportKey(firstReport?.key || "daily");
+    setActiveReportKey(firstReport?.key || "operations");
     setPayload(null);
     setError(null);
     setExportJob(null);
@@ -623,26 +1149,16 @@ export default function ReportsPage() {
   }
 
   function buildExportPayload() {
-    const params = buildParams(activeReport);
-
-    if (activeReport.mode === "customerRange") {
-      params.customer_id = customerId.trim();
-    }
-
     return {
       type: activeReport.exportType,
       format: "pdf",
-      params,
+      params: buildParams(activeReport),
     };
   }
 
   async function handleExportPdf() {
     if (exporting) return;
-
-    if (activeReport.mode === "customerRange" && !customerId.trim()) {
-      toast.error("أدخل رقم العميل أولاً");
-      return;
-    }
+    if (activeReport.exportable === false) return;
 
     setExporting(true);
     setExportJob(null);
@@ -667,8 +1183,8 @@ export default function ReportsPage() {
   }
 
   async function pollExport(jobId, attempts = 0) {
-    if (attempts > 40) {
-      toast.error("انتهت مهلة انتظار التصدير");
+    if (attempts > 45) {
+      toast.error("التصدير ما خلص. تأكد أن queue worker شغال في الباك");
       setExporting(false);
       setExportJob(null);
       return;
@@ -676,7 +1192,19 @@ export default function ReportsPage() {
 
     try {
       const res = await reportsService.exportStatus(jobId);
-      const status = getExportStatus(res);
+      const payload = unwrapPayload(res);
+
+      const status = String(
+        reportsService.getExportStatus(res) ||
+          payload?.status ||
+          payload?.state ||
+          payload?.job_status ||
+          payload?.export_status ||
+          payload?.job?.status ||
+          payload?.export?.status ||
+          payload?.export_job?.status ||
+          ""
+      ).toLowerCase();
 
       setExportJob({ id: jobId, status });
 
@@ -686,9 +1214,16 @@ export default function ReportsPage() {
       }
 
       if (FAIL_STATUSES.includes(status)) {
-        toast.error("فشل تجهيز ملف التصدير");
+        toast.error(payload?.message || "فشل تجهيز ملف التصدير");
         setExporting(false);
         setExportJob(null);
+        return;
+      }
+
+      if (!status || WORKING_STATUSES.includes(status)) {
+        pollTimerRef.current = setTimeout(() => {
+          pollExport(jobId, attempts + 1);
+        }, 2000);
         return;
       }
 
@@ -707,12 +1242,16 @@ export default function ReportsPage() {
       const file = await reportsService.exportDownload(jobId);
       const statusPayload = unwrapPayload(statusRes);
 
+      const contentType =
+        file?.headers?.["content-type"] ||
+        file?.headers?.["Content-Type"] ||
+        "application/pdf";
+
       const fileName =
-        statusPayload?.filename ||
-        statusPayload?.file_name ||
+        reportsService.getExportFileName(statusPayload, `${activeReport.key}-${Date.now()}.pdf`) ||
         `${activeReport.key}-${Date.now()}.pdf`;
 
-      const blob = new Blob([file.data], { type: "application/pdf" });
+      const blob = new Blob([file.data], { type: contentType });
       const url = window.URL.createObjectURL(blob);
 
       const a = document.createElement("a");
@@ -739,7 +1278,7 @@ export default function ReportsPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-700 shadow-sm">
-              <ChartNoAxesColumnIncreasing className="h-7 w-7" />
+              <BarChart3 className="h-7 w-7" />
             </div>
 
             <div className="text-right">
@@ -747,7 +1286,7 @@ export default function ReportsPage() {
                 التقارير
               </h1>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                تقارير الحركة، الأرباح، رأس المال، المصروفات، وكشوفات العملاء
+                الحسابات مبنية مباشرة على العمليات والداشبورد لضمان دقة الكروت والجداول
               </p>
             </div>
           </div>
@@ -762,30 +1301,32 @@ export default function ReportsPage() {
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
 
-            <button
-              type="button"
-              onClick={handleExportPdf}
-              disabled={exporting || loading}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {exporting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  جاري تجهيز التقرير...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4" />
-                  تصدير PDF
-                </>
-              )}
-            </button>
+            {activeReport.exportable !== false && (
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={exporting || loading}
+                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {exporting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    جاري تجهيز التقرير...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    تصدير PDF
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
-        {exporting && (
-          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-right text-sm font-black text-amber-800">
-            جاري تجهيز التقرير...
+        {exportJob?.status && (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right text-xs font-black text-slate-500">
+            حالة التصدير: {exportJob.status}
           </div>
         )}
       </section>
@@ -897,66 +1438,27 @@ export default function ReportsPage() {
           </div>
 
           <div className="mt-6 flex flex-wrap items-end gap-3">
-            {activeReport.mode === "date" && (
-              <Field label="التاريخ">
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="ep-input h-11 w-full min-w-[190px]"
-                />
-              </Field>
-            )}
+            <Field label="من تاريخ">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  if (dateTo < e.target.value) setDateTo(e.target.value);
+                }}
+                className="ep-input h-11 w-full min-w-[190px]"
+              />
+            </Field>
 
-            {activeReport.mode === "month" && (
-              <Field label="الشهر">
-                <input
-                  type="month"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  className="ep-input h-11 w-full min-w-[190px]"
-                />
-              </Field>
-            )}
-
-            {(activeReport.mode === "range" || activeReport.mode === "customerRange") && (
-              <>
-                <Field label="من تاريخ">
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => {
-                      setDateFrom(e.target.value);
-                      if (dateTo < e.target.value) setDateTo(e.target.value);
-                    }}
-                    className="ep-input h-11 w-full min-w-[190px]"
-                  />
-                </Field>
-
-                <Field label="إلى تاريخ">
-                  <input
-                    type="date"
-                    min={dateFrom}
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="ep-input h-11 w-full min-w-[190px]"
-                  />
-                </Field>
-              </>
-            )}
-
-            {activeReport.mode === "customerRange" && (
-              <Field label="رقم العميل">
-                <input
-                  type="number"
-                  min="1"
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                  className="ep-input h-11 w-full min-w-[190px]"
-                  placeholder="مثال: 1"
-                />
-              </Field>
-            )}
+            <Field label="إلى تاريخ">
+              <input
+                type="date"
+                min={dateFrom}
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="ep-input h-11 w-full min-w-[190px]"
+              />
+            </Field>
 
             <button
               type="button"
@@ -974,8 +1476,6 @@ export default function ReportsPage() {
           <ErrorState title="تعذّر تحميل التقرير" description={extractApiError(error)} onRetry={load} />
         ) : loading ? (
           <LoadingState />
-        ) : activeReport.mode === "customerRange" && !customerId.trim() ? (
-          <EmptyState icon={UserRound} title="أدخل رقم العميل" description="اكتب رقم العميل ثم اضغط عرض التقرير" />
         ) : !payload ? (
           <EmptyState icon={FileText} title="لا توجد بيانات" description="لا توجد بيانات لهذا التقرير حسب الفلاتر الحالية" />
         ) : (
@@ -1009,8 +1509,8 @@ export default function ReportsPage() {
             {sections.length === 0 ? (
               <EmptyState
                 icon={FileText}
-                title="لا توجد سجلات تفصيلية"
-                description="الـ API رجّع القيم الحالية بدون معاملات أو صفوف تفصيلية"
+                title="لا توجد سجلات"
+                description="لا يوجد عمليات ضمن الفترة الحالية"
               />
             ) : (
               <div className="space-y-5">
@@ -1058,6 +1558,7 @@ function StatCard({ card }) {
     blue: "border-blue-200 bg-blue-50 text-blue-700",
     violet: "border-violet-200 bg-violet-50 text-violet-700",
     amber: "border-amber-200 bg-amber-50 text-amber-700",
+    teal: "border-teal-200 bg-teal-50 text-teal-700",
   };
 
   return (
@@ -1107,7 +1608,7 @@ function ReportTable({ title, rows }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[920px]">
+        <table className="w-full min-w-[980px]">
           <thead className="border-b border-slate-100 bg-white">
             <tr>
               {columns.map((column) => (
@@ -1120,9 +1621,9 @@ function ReportTable({ title, rows }) {
 
           <tbody className="divide-y divide-slate-100">
             {rows.map((row, index) => (
-              <tr key={row?.id || index} className="transition hover:bg-slate-50">
+              <tr key={row?.id || row?.reference_number || row?.supplier || row?.customer || row?.box || index} className="transition hover:bg-slate-50">
                 {columns.map((column) => (
-                  <td key={column} className="max-w-[240px] truncate px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  <td key={column} className="max-w-[260px] truncate px-5 py-4 text-right text-sm font-bold text-slate-700">
                     {formatCell(row?.[column], column)}
                   </td>
                 ))}

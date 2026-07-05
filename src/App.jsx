@@ -79,7 +79,7 @@ function Shell() {
 
             <Route path="/expenses" element={<ExpensesPage />} />
             <Route path="/capital" element={<CapitalPage />} />
-            <Route path="/reconciliation" element={<ReconciliationPage />} />
+            {/* <Route path="/reconciliation" element={<ReconciliationPage />} /> */}
 
             <Route path="/reports" element={<ReportsPage />} />
 

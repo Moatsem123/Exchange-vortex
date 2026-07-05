@@ -9,11 +9,28 @@ function unwrapPayload(res) {
   return data?.data || data || {};
 }
 
+function cleanParams(params = {}) {
+  const cleaned = {};
+
+  Object.keys(params || {}).forEach((key) => {
+    const value = params[key];
+
+    if (value === undefined || value === null || value === "") return;
+
+    cleaned[key] = value;
+  });
+
+  return cleaned;
+}
+
 function getExportJobId(res) {
   const data = unwrapPayload(res);
 
   return (
     data?.job_id ||
+    data?.job?.id ||
+    data?.export?.job_id ||
+    data?.export?.id ||
     data?.id ||
     data?.export_id ||
     data?.uuid ||
@@ -27,60 +44,95 @@ function getExportStatus(res) {
   return (
     data?.status ||
     data?.state ||
+    data?.job_status ||
+    data?.export_status ||
+    data?.job?.status ||
+    data?.export?.status ||
+    data?.export_job?.status ||
     "queued"
   );
 }
 
-function getExportFileName(res, fallback = "report") {
+function getExportFileName(res, fallback = "report.pdf") {
   const data = unwrapPayload(res);
 
   return (
     data?.filename ||
     data?.file_name ||
     data?.name ||
+    data?.job?.filename ||
+    data?.job?.file_name ||
+    data?.export?.filename ||
+    data?.export?.file_name ||
     fallback
   );
 }
 
+function queueExportRequest({ type, format = "pdf", params = {} }) {
+  return api
+    .post("/reports/export", {
+      type,
+      format,
+      params: cleanParams(params),
+    })
+    .then((r) => r.data);
+}
+
 const reportsService = {
-  daily: (params = {}) =>
-    api.get("/reports/daily", { params }).then((r) => r.data),
+  operationsRaw: (params = {}) =>
+    api
+      .get("/operations", {
+        params: cleanParams({
+          per_page: 1000,
+          ...params,
+        }),
+      })
+      .then((r) => r.data),
 
-  monthly: (params = {}) =>
-    api.get("/reports/monthly", { params }).then((r) => r.data),
+  dashboardFinancial: (params = {}) =>
+    api
+      .get("/dashboard/financial", {
+        params: cleanParams(params),
+      })
+      .then((r) => r.data),
 
-  dailyProfit: (params = {}) =>
-    api.get("/reports/daily-profit", { params }).then((r) => r.data),
+  dashboardBoxes: (params = {}) =>
+    api
+      .get("/dashboard/boxes", {
+        params: cleanParams(params),
+      })
+      .then((r) => r.data),
 
-  monthlyProfit: (params = {}) =>
-    api.get("/reports/monthly-profit", { params }).then((r) => r.data),
+  operations: (params = {}) =>
+    api.get("/reports/operations", { params: cleanParams(params) }).then((r) => r.data),
+
+  commissions: (params = {}) =>
+    api.get("/reports/commissions", { params: cleanParams(params) }).then((r) => r.data),
 
   profitSummary: (params = {}) =>
-    api.get("/reports/profit-summary", { params }).then((r) => r.data),
+    api.get("/reports/profit-summary", { params: cleanParams(params) }).then((r) => r.data),
 
-  profitByUser: (params = {}) =>
-    api.get("/reports/profit-by-user", { params }).then((r) => r.data),
+  suppliers: (params = {}) =>
+    api.get("/reports/suppliers", { params: cleanParams(params) }).then((r) => r.data),
 
-  profitBySupplier: (params = {}) =>
-    api.get("/reports/profit-by-supplier", { params }).then((r) => r.data),
+  customers: (params = {}) =>
+    api.get("/reports/customers", { params: cleanParams(params) }).then((r) => r.data),
 
-  usersComparison: (params = {}) =>
-    api.get("/reports/users-comparison", { params }).then((r) => r.data),
+  boxes: (params = {}) =>
+    api.get("/reports/boxes", { params: cleanParams(params) }).then((r) => r.data),
 
-  customerStatement: (customerId, params = {}) =>
-    api.get(`/reports/customer/${customerId}/statement`, { params }).then((r) => r.data),
+  pending: (params = {}) =>
+    api.get("/reports/pending", { params: cleanParams(params) }).then((r) => r.data),
 
-  capitalReport: (params = {}) =>
-    api.get("/reports/capital-report", { params }).then((r) => r.data),
+  cancelled: (params = {}) =>
+    api.get("/reports/cancelled", { params: cleanParams(params) }).then((r) => r.data),
 
-  expenseReport: (params = {}) =>
-    api.get("/reports/expense-report", { params }).then((r) => r.data),
-
-  netWorthReport: (params = {}) =>
-    api.get("/reports/net-worth-report", { params }).then((r) => r.data),
-
-  queueExport: (data) =>
-    api.post("/reports/export", data).then((r) => r.data),
+  queueExport: (data = {}) =>
+    queueExportRequest({
+      type: data.type,
+      format: data.format || "pdf",
+      params: data.params || {},
+    }),
 
   exportStatus: (jobId) =>
     api.get(`/reports/export/${jobId}/status`).then((r) => r.data),
@@ -90,71 +142,16 @@ const reportsService = {
       responseType: "blob",
     }),
 
-  queueDailyPdfExport: (params = {}) =>
-    api
-      .post("/reports/export", {
-        type: "daily",
-        format: "pdf",
-        params,
-      })
-      .then((r) => r.data),
-
-  queueDailyExcelExport: (params = {}) =>
-    api
-      .post("/reports/export", {
-        type: "daily",
-        format: "excel",
-        params,
-      })
-      .then((r) => r.data),
-
-  queueMonthlyPdfExport: (params = {}) =>
-    api
-      .post("/reports/export", {
-        type: "monthly",
-        format: "pdf",
-        params,
-      })
-      .then((r) => r.data),
-
-  queueMonthlyExcelExport: (params = {}) =>
-    api
-      .post("/reports/export", {
-        type: "monthly",
-        format: "excel",
-        params,
-      })
-      .then((r) => r.data),
-
-  queueStatementPdfExport: (params = {}) =>
-    api
-      .post("/reports/export", {
-        type: "statement",
-        format: "pdf",
-        params,
-      })
-      .then((r) => r.data),
-
-  queueStatementExcelExport: (params = {}) =>
-    api
-      .post("/reports/export", {
-        type: "statement",
-        format: "excel",
-        params,
-      })
-      .then((r) => r.data),
-
   queueGenericExport: ({ type, format = "pdf", params = {} }) =>
-    api
-      .post("/reports/export", {
-        type,
-        format,
-        params,
-      })
-      .then((r) => r.data),
+    queueExportRequest({
+      type,
+      format,
+      params,
+    }),
 
   unwrap,
   unwrapPayload,
+  cleanParams,
   getExportJobId,
   getExportStatus,
   getExportFileName,
