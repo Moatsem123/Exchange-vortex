@@ -600,17 +600,6 @@ export default function DashboardPage() {
       <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/70 sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="text-right">
-            <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
-              <Badge color={healthStatus === "stable" ? "emerald" : healthStatus === "warning" ? "rose" : "amber"}>
-                {healthStatus === "stable"
-                  ? "النظام مستقر"
-                  : healthStatus === "warning"
-                    ? "بحاجة مطابقة"
-                    : "يوجد عمليات معلقة"}
-              </Badge>
-              <Badge color="teal">Live Finance</Badge>
-            </div>
-
             <h1 className="text-2xl font-black text-slate-950 sm:text-3xl">
               لوحة قيادة مالية
             </h1>

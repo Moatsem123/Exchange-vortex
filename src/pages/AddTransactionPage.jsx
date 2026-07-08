@@ -390,7 +390,7 @@ function AddTransactionPage() {
 
       return {
         transaction_date: transactionDate,
-        status: operationStatus,
+        status: "completed",
         funding_source: "box",
 
         supplier_id: null,
@@ -430,7 +430,7 @@ function AddTransactionPage() {
 
     return {
       transaction_date: transactionDate,
-      status: operationStatus,
+      status: isBoxFunding ? "completed" : operationStatus,
       funding_source: fundingSource,
 
       supplier_id: isSupplierFunding ? Number(supplierId) : null,
@@ -578,6 +578,7 @@ function AddTransactionPage() {
                               setSupplierId(null);
                               setSupplierSearch("");
                               setSupplierAmount("");
+                              setOperationStatus("completed");
                               setShowSupplierList(false);
                             }
                           }}
@@ -906,10 +907,6 @@ function AddTransactionPage() {
                           className="ep-input"
                         />
                       </Field>
-
-                      <Field label="حالة العملية">
-                        <StatusSelect value={operationStatus} onChange={setOperationStatus} />
-                      </Field>
                     </div>
                   )}
                 </div>
@@ -1054,10 +1051,6 @@ function AddTransactionPage() {
                   <Field label="الوقت">
                     <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
                   </Field>
-
-                  <Field label="حالة العملية">
-                    <StatusSelect value={operationStatus} onChange={setOperationStatus} />
-                  </Field>
                 </div>
               )}
             </Section>
@@ -1152,7 +1145,7 @@ function AddTransactionPage() {
 
               <div className="space-y-3 text-sm">
                 <SummaryRow label="نوع المعاملة" value={PAGE_TYPES.find((type) => type.key === pageType)?.label || "—"} />
-                <SummaryRow label="حالة العملية" value={getStatusLabel(operationStatus)} />
+                <SummaryRow label="حالة العملية" value={isTransfer || isBoxFunding ? "مكتملة" : getStatusLabel(operationStatus)} />
 
                 {referenceNumber && <SummaryRow label="الرقم المرجعي" value={referenceNumber} />}
 
