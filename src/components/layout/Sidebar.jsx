@@ -107,6 +107,11 @@ const SECTIONS = [
           "capital.withdraw",
           "capital.transfer",
           "capital.transferToBox",
+          "capital.account.create",
+          "capital.movement.create",
+          "capital.movement.update",
+          "capital.movement.delete",
+          "capital.statement.view",
         ],
       },
       {
