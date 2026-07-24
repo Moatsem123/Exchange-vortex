@@ -121,8 +121,17 @@ const reportsService = {
   boxes: (params = {}) =>
     api.get("/reports/boxes", { params: cleanParams(params) }).then((r) => r.data),
 
+  operationsWorkflow: (params = {}) =>
+    api.get("/reports/operations-workflow", { params: cleanParams(params) }).then((r) => r.data),
+
+  obligations: (params = {}) =>
+    api.get("/reports/obligations", { params: cleanParams(params) }).then((r) => r.data),
+
   pending: (params = {}) =>
     api.get("/reports/pending", { params: cleanParams(params) }).then((r) => r.data),
+
+  customerStatement: (customerId, params = {}) =>
+    api.get(`/reports/customer/${customerId}/statement`, { params: cleanParams(params) }).then((r) => r.data),
 
   cancelled: (params = {}) =>
     api.get("/reports/cancelled", { params: cleanParams(params) }).then((r) => r.data),

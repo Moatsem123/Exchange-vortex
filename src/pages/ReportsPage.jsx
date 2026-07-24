@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -28,8 +29,20 @@ import Badge from "../shared/Badge";
 import { useToast } from "../shared/Toast";
 import reportsService from "../services/reports";
 import { extractApiError, formatCompactNumber, formatMoney } from "../shared/helpers";
+import { getBoxTypeLabel } from "../shared/boxTypes";
 
 const REPORT_TYPES = [
+  {
+    key: "operationsWorkflow",
+    group: "movement",
+    label: "تقرير سير العمليات",
+    subtitle: "حالات العميل والمورد والتسويات",
+    icon: Activity,
+    mode: "range",
+    exportType: "operations-workflow",
+    exportable: true,
+    apiMethod: "operationsWorkflow",
+  },
   {
     key: "operations",
     group: "movement",
@@ -104,11 +117,36 @@ const REPORT_TYPES = [
     key: "boxes",
     group: "finance",
     label: "تقرير الصناديق",
-    subtitle: "أرصدة الصناديق وحركتها",
+    subtitle: "أرصدة الصناديق وحركتها الفعلية حسب ما يرجعه الخادم",
     icon: Boxes,
     mode: "range",
-    exportType: null,
-    exportable: false,
+    exportType: "boxes",
+    exportable: true,
+    apiMethod: "boxes",
+  },
+  {
+    key: "receivablesReport",
+    group: "finance",
+    label: "المبالغ المستحقة لنا",
+    subtitle: "ذمم العملاء والموردين لصالح الشركة",
+    icon: Wallet,
+    mode: "range",
+    exportType: "obligations",
+    exportable: true,
+    apiMethod: "obligations",
+    fixedParams: { obligation_type: "receivable" },
+  },
+  {
+    key: "payablesReport",
+    group: "finance",
+    label: "المبالغ المستحقة علينا",
+    subtitle: "ذمم الموردين والعملاء على الشركة",
+    icon: ArrowDown,
+    mode: "range",
+    exportType: "obligations",
+    exportable: true,
+    apiMethod: "obligations",
+    fixedParams: { obligation_type: "payable" },
   },
   {
     key: "dashboardSummary",
@@ -144,7 +182,7 @@ const REPORT_GROUPS = [
   {
     key: "finance",
     label: "تقارير مالية",
-    subtitle: "الصناديق وملخص الداشبورد",
+    subtitle: "الصناديق، الذمم، وملخص الداشبورد",
     icon: Wallet,
   },
 ];
@@ -245,7 +283,11 @@ function isMoneyKey(key = "") {
     lowered.includes("capital") ||
     lowered.includes("worth") ||
     lowered.includes("incoming") ||
-    lowered.includes("outgoing")
+    lowered.includes("outgoing") ||
+    lowered.includes("payable") ||
+    lowered.includes("receivable") ||
+    lowered.includes("remaining") ||
+    lowered.includes("settled")
   );
 }
 
@@ -641,7 +683,18 @@ function buildOperationsPayload(report, allOperations, financial, boxes, params)
 function getRowsFromPayload(payload = {}) {
   if (Array.isArray(payload)) return payload;
 
-  const keys = ["operations", "rows", "items", "suppliers", "customers", "boxes", "commissions"];
+  const keys = [
+    "operations",
+    "obligations",
+    "receivables",
+    "payables",
+    "rows",
+    "items",
+    "suppliers",
+    "customers",
+    "boxes",
+    "commissions",
+  ];
 
   for (const key of keys) {
     if (Array.isArray(payload?.[key])) return payload[key];
@@ -712,8 +765,19 @@ function labelOf(key) {
     supplier: "المورد",
     customer: "العميل",
     box: "الصندوق",
+    party: "الطرف",
+    party_name: "الطرف",
+    counterparty: "الطرف",
+    counterparty_role: "نوع الطرف",
+    obligation_type: "نوع الذمة",
+    reason: "سبب الذمة",
+    operation: "العملية",
 
     amount: "المبلغ",
+    original_amount: "المبلغ الأصلي",
+    paid_amount: "المبلغ المدفوع",
+    settled_amount: "المبلغ المسدد",
+    remaining_amount: "المبلغ المتبقي",
     transferred_amount: "المبلغ المحول",
     total_transferred_amount: "إجمالي المبلغ",
     total_received_amount: "إجمالي المستلم",
@@ -721,6 +785,13 @@ function labelOf(key) {
     supplier_amount: "مبلغ المورد",
     customer_amount: "مبلغ العميل",
     customer_net_amount: "صافي العميل",
+    customer_direction: "اتجاه العميل",
+    customer_settlement_status: "حالة تسوية العميل",
+    supplier_fulfillment_status: "حالة تنفيذ المورد",
+    supplier_settlement_status: "حالة تسوية المورد",
+    customer_settled_at: "تاريخ تسوية العميل",
+    supplier_fulfilled_at: "تاريخ تنفيذ المورد",
+    supplier_settled_at: "تاريخ تسوية المورد",
 
     commission: "العمولة",
     commission_amount: "العمولة",
@@ -740,14 +811,19 @@ function labelOf(key) {
     pending: "معلقة",
     pending_count: "معلقة",
     pending_operations: "عمليات معلقة",
+    unsettled: "غير مسدد",
+    partially_settled: "مسدد جزئياً",
+    settled: "تمت التسوية",
     cancelled: "ملغاة",
     cancelled_count: "ملغاة",
     cancelled_operations: "عمليات ملغاة",
 
     current_balance: "الرصيد الحالي",
-    total_boxes_balance: "إجمالي الصناديق",
-    capital_balance: "رأس المال",
-    free_capital: "رأس المال الحر",
+    total_boxes_balance: "إجمالي أرصدة الصناديق",
+    boxes_total_balance: "إجمالي أرصدة الصناديق",
+    capital_balance: "إجمالي رأس المال",
+    free_capital: "الرصيد العام لرأس المال",
+    box_type: "نوع الصندوق",
     incoming_amount: "الداخل",
     outgoing_amount: "الخارج",
     last_operation: "آخر عملية",
@@ -792,6 +868,23 @@ function formatStatus(value) {
     completed: "مكتملة",
     cancelled: "ملغاة",
     canceled: "ملغاة",
+    unsettled: "غير مسدد",
+    partially_settled: "مسدد جزئياً",
+    settled: "تمت التسوية",
+    customer_pays_intermediary: "العميل يرسل أموالاً",
+    intermediary_pays_customer: "العميل يستلم أموالاً",
+    receivable: "مستحق لنا",
+    payable: "مستحق علينا",
+    customer: "عميل",
+    supplier: "مورد",
+    box: "صندوق",
+    turkish: getBoxTypeLabel("turkish"),
+    local_bank_wallet: getBoxTypeLabel("local_bank_wallet"),
+    usdt_wallet: getBoxTypeLabel("usdt_wallet"),
+    customer_debt: "العميل مدين لنا",
+    supplier_debt: "المورد مدين لنا",
+    supplier_payable: "مستحق للمورد",
+    customer_payable: "مستحق للعميل",
     ready: "جاهز",
     queued: "بالانتظار",
     processing: "قيد المعالجة",
@@ -804,7 +897,17 @@ function formatStatus(value) {
 function formatCell(value, key = "") {
   if (value === null || value === undefined || value === "") return "—";
 
-  if (key === "status") return formatStatus(String(value));
+  if (
+    key === "status" ||
+    key.includes("_status") ||
+    key === "customer_direction" ||
+    key === "obligation_type" ||
+    key === "reason" ||
+    key === "counterparty_role" ||
+    key === "type"
+  ) {
+    return formatStatus(String(value));
+  }
   if (key.includes("_at")) return formatDateTime(value);
   if (key.includes("date") || key === "last_operation") return formatDate(value);
 
@@ -844,12 +947,17 @@ function getModeLabel(mode) {
 function getTableSections(payload) {
   const sections = [
     ["operations", "العمليات"],
+    ["obligations", "الذمم"],
+    ["receivables", "المبالغ المستحقة لنا"],
+    ["payables", "المبالغ المستحقة علينا"],
     ["rows", "السجلات"],
     ["items", "العناصر"],
     ["suppliers", "الموردون"],
     ["customers", "العملاء"],
     ["boxes", "الصناديق"],
     ["commissions", "العمولات"],
+    ["currency_totals", "الإجماليات حسب العملة"],
+    ["status_totals", "الإجماليات حسب الحالة"],
   ];
 
   return sections
@@ -933,6 +1041,26 @@ function makeCard(title, value, icon, color, kind = "money", note = "") {
 }
 
 function buildCards(reportKey, payload = {}) {
+  if (reportKey === "operationsWorkflow") {
+    return [
+      makeCard("إجمالي العمليات", firstValue(payload, ["total_operations", "operation_count"], rowsCount(payload)), Activity, "blue", "count"),
+      makeCard("معلقة", firstValue(payload, ["pending", "pending_count", "pending_operations"], 0), Loader2, "amber", "count"),
+      makeCard("مكتملة", firstValue(payload, ["completed", "completed_count", "completed_operations"], 0), Activity, "emerald", "count"),
+      makeCard("عمولات", firstValue(payload, ["total_commission", "total_commissions"], sumRows(payload, ["commission_amount", "commission"])), ReceiptText, "violet"),
+    ];
+  }
+
+  if (reportKey === "receivablesReport" || reportKey === "payablesReport") {
+    const isReceivable = reportKey === "receivablesReport";
+
+    return [
+      makeCard(isReceivable ? "مستحق لنا" : "مستحق علينا", firstValue(payload, ["total_amount", "amount"], sumRows(payload, ["amount", "original_amount"])), Wallet, isReceivable ? "emerald" : "rose"),
+      makeCard("تم تسديده", firstValue(payload, ["paid_amount", "settled_amount"], sumRows(payload, ["paid_amount", "settled_amount"])), ReceiptText, "blue"),
+      makeCard("المتبقي", firstValue(payload, ["remaining_amount"], sumRows(payload, ["remaining_amount"])), DollarSign, "amber"),
+      makeCard("عدد السجلات", rowsCount(payload), Activity, "violet", "count"),
+    ];
+  }
+
   if (reportKey === "operations") {
     return [
       makeCard("إجمالي العمليات", firstValue(payload, ["total_operations"], 0), Activity, "blue", "count"),
@@ -1003,7 +1131,7 @@ function buildCards(reportKey, payload = {}) {
   if (reportKey === "boxes") {
     return [
       makeCard("عدد الصناديق", firstValue(payload, ["boxes_count"], getRowsFromPayload(payload).length), Boxes, "violet", "count"),
-      makeCard("إجمالي الأرصدة", firstValue(payload, ["total_boxes_balance"], 0), Wallet, "emerald"),
+      makeCard("إجمالي أرصدة الصناديق", firstValue(payload, ["total_boxes_balance", "boxes_total_balance"], sumRows(payload, ["current_balance"])), Wallet, "emerald"),
       makeCard("عدد عمليات الصناديق", firstValue(payload, ["operations_count"], 0), Activity, "blue", "count"),
       makeCard("إجمالي الخارج", firstValue(payload, ["outgoing_amount"], 0), ArrowDown, "rose"),
     ];
@@ -1011,8 +1139,8 @@ function buildCards(reportKey, payload = {}) {
 
   if (reportKey === "dashboardSummary") {
     return [
-      makeCard("رأس المال", firstValue(payload, ["capital_balance"], 0), Wallet, "emerald"),
-      makeCard("الصناديق", firstValue(payload, ["total_boxes_balance"], 0), Boxes, "blue"),
+      makeCard("إجمالي رأس المال", firstValue(payload, ["capital_balance"], 0), Wallet, "emerald"),
+      makeCard("إجمالي أرصدة الصناديق", firstValue(payload, ["total_boxes_balance"], 0), Boxes, "blue"),
       makeCard("إجمالي العمليات", firstValue(payload, ["total_operations"], 0), Activity, "violet", "count"),
       makeCard("إجمالي العمولات", firstValue(payload, ["total_commission"], 0), ReceiptText, "amber"),
     ];
@@ -1056,7 +1184,7 @@ export default function ReportsPage() {
   const pollTimerRef = useRef(null);
 
   const [activeGroupKey, setActiveGroupKey] = useState("movement");
-  const [activeReportKey, setActiveReportKey] = useState("operations");
+  const [activeReportKey, setActiveReportKey] = useState("operationsWorkflow");
   const [dateFrom, setDateFrom] = useState(getDefaultDateFrom());
   const [dateTo, setDateTo] = useState(today);
 
@@ -1088,11 +1216,13 @@ export default function ReportsPage() {
   const ActiveGroupIcon = activeGroup.icon || Layers3;
 
   function buildParams(report = activeReport) {
+    const fixedParams = report.fixedParams || {};
+
     if (report.mode === "range") {
-      return { date_from: dateFrom, date_to: dateTo };
+      return { date_from: dateFrom, date_to: dateTo, ...fixedParams };
     }
 
-    return {};
+    return { ...fixedParams };
   }
 
   async function load() {
@@ -1101,6 +1231,19 @@ export default function ReportsPage() {
 
     try {
       const params = buildParams(activeReport);
+
+      if (activeReport.apiMethod && typeof reportsService[activeReport.apiMethod] === "function") {
+        const res = await reportsService[activeReport.apiMethod](params);
+        const directPayload = unwrapPayload(res);
+
+        setPayload({
+          title: activeReport.label,
+          date_from: params.date_from,
+          date_to: params.date_to,
+          ...directPayload,
+        });
+        return;
+      }
 
       const [operationsRes, financialRes, boxesRes] = await Promise.all([
         reportsService.operationsRaw(),

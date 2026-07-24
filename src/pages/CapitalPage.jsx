@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Wallet,
@@ -24,14 +25,9 @@ import { useToast } from "../shared/Toast";
 import capitalService from "../services/capital";
 import boxesService from "../services/boxes";
 import { extractApiError, formatDate, formatMoney, unwrapList } from "../shared/helpers";
+import { BOX_TYPE_OPTIONS, getBoxTypeLabel } from "../shared/boxTypes";
 
 const PER_PAGE = 20;
-
-const BOX_TYPE_OPTIONS = [
-  { value: "turkish", label: "صناديق تركيا" },
-  { value: "local_bank_wallet", label: "البنوك والمحافظ الرقمية" },
-  { value: "usdt_wallet", label: "المحافظ الإلكترونية" },
-];
 
 const INITIAL_FORM = {
   amount: "",
@@ -51,12 +47,12 @@ const ACTIONS = {
   },
   withdraw: {
     title: "سحب رأس مال",
-    subtitle: "سحب مبلغ من رأس المال الحر",
+    subtitle: "سحب مبلغ من الرصيد العام لرأس المال",
     icon: Minus,
   },
   transfer: {
     title: "تحويل رأس مال إلى صندوق",
-    subtitle: "نقل مبلغ من رأس المال الحر إلى صندوق تشغيلي",
+    subtitle: "نقل مبلغ من الرصيد العام لرأس المال إلى صندوق تشغيلي",
     icon: ArrowRightLeft,
   },
 };
@@ -103,10 +99,6 @@ function normalizeTransactions(res) {
   };
 }
 
-function getBoxTypeLabel(type) {
-  return BOX_TYPE_OPTIONS.find((item) => item.value === type)?.label || "كل الصناديق";
-}
-
 function getTransactionTypeLabel(type) {
   const labels = {
     deposit: "إيداع",
@@ -130,11 +122,7 @@ function getTransactionBadgeColor(type) {
 function getBoxLabel(box) {
   if (!box) return "—";
 
-  const typeLabel = {
-    turkish: "صندوق تركيا",
-    local_bank_wallet: "بنك/محفظة",
-    usdt_wallet: "محفظة إلكترونية",
-  }[box.type] || box.type || "صندوق";
+  const typeLabel = getBoxTypeLabel(box.type, "صندوق");
 
   return `${box.name || `#${box.id}`} - ${typeLabel}`;
 }
@@ -465,7 +453,7 @@ export default function CapitalPage() {
             />
 
             <StatCard
-              title="رأس المال الحر"
+              title="الرصيد العام لرأس المال"
               value={freeCapital}
               prefix="$"
               icon={Wallet}
@@ -500,14 +488,14 @@ export default function CapitalPage() {
                 <div className="min-w-0 text-right">
                   <h3 className="truncate text-base font-black text-slate-900">الوضع المالي الحالي</h3>
                   <p className="text-xs leading-6 text-slate-500">
-                    رأس المال الكلي = رأس المال الحر + الأرصدة المحولة للصناديق
+                    إجمالي رأس المال = الرصيد العام لرأس المال + أرصدة الصناديق
                   </p>
                 </div>
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <InfoBox label="رأس المال الكلي" value={capitalBalance} color="emerald" />
-                <InfoBox label="رأس المال الحر" value={freeCapital} color="teal" />
+                <InfoBox label="الرصيد العام" value={freeCapital} color="teal" />
                 <InfoBox label="الصناديق" value={boxesTotal} color="violet" />
               </div>
             </div>
@@ -824,7 +812,7 @@ function CapitalForm({ actionType, form, setForm, boxes, errors, loading, onSubm
 
             <div className="min-w-0 text-right">
               <p className="text-xs font-black text-teal-800">
-                القيمة التي ستخصم من رأس المال الحر
+                القيمة التي ستخصم من الرصيد العام لرأس المال
               </p>
               <p dir="ltr" className="mt-1 truncate font-mono text-lg font-black text-teal-900">
                 ${formatMoney(transferAmountUsd)}

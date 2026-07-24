@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   BadgePlus,
-  ArrowRightLeft,
   Check,
   Calculator,
   Save,
@@ -23,19 +22,14 @@ import customersService from "../services/customers";
 import currenciesService from "../services/currencies";
 import boxesService from "../services/boxes";
 import { extractApiError, formatMoney, unwrapList } from "../shared/helpers";
+import { BOX_TYPE_OPTIONS, getBoxTypeLabel } from "../shared/boxTypes";
 
 const PAGE_TYPES = [
   {
     key: "operation",
-    label: "عمليات",
-    desc: "عملية تحويل حسب مصدر الأموال",
+    label: "عملية",
+    desc: "عملية تحويل بين العميل والمورد أو الصندوق",
     icon: BadgePlus,
-  },
-  {
-    key: "transfer",
-    label: "تحويل بين حسابات النظام",
-    desc: "تحويل مبلغ بين صناديق داخل النظام",
-    icon: ArrowRightLeft,
   },
 ];
 
@@ -54,24 +48,13 @@ const FUNDING_TYPES = [
   },
 ];
 
-const BOX_TYPE_OPTIONS = [
-  { value: "turkish", label: "صناديق تركيا", hint: "TRY" },
-  { value: "local_bank_wallet", label: "البنوك والمحافظ الرقمية", hint: "ILS / USD" },
-  { value: "usdt_wallet", label: "المحافظ الإلكترونية", hint: "USDT" },
-];
-
 const STATUS_OPTIONS = [
-  { value: "pending", label: "قيد التنفيذ" },
+  { value: "pending", label: "معلقة" },
   { value: "completed", label: "مكتملة" },
-  { value: "cancelled", label: "ملغاة" },
 ];
-
-function getBoxTypeLabel(type) {
-  return BOX_TYPE_OPTIONS.find((item) => item.value === type)?.label || "كل الصناديق";
-}
 
 function getStatusLabel(status) {
-  return STATUS_OPTIONS.find((item) => item.value === status)?.label || "قيد التنفيذ";
+  return STATUS_OPTIONS.find((item) => item.value === status)?.label || "معلقة";
 }
 
 function normalizeList(res) {
@@ -89,10 +72,9 @@ function numberValue(value) {
 
 function AddTransactionPage() {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
   const toast = useToast();
 
-  const [pageType, setPageType] = useState(params.get("type") || "operation");
+  const [pageType, setPageType] = useState("operation");
   const [fundingSource, setFundingSource] = useState("supplier");
 
   const [customerId, setCustomerId] = useState(null);
@@ -262,13 +244,6 @@ function AddTransactionPage() {
     if (isBoxFunding) return boxAmount;
     return "";
   }, [isTransfer, isSupplierFunding, isBoxFunding, transferAmount, supplierAmount, boxAmount]);
-
-  const sourceCurrency = useMemo(() => {
-    if (isTransfer) return transferCurrency;
-    if (isSupplierFunding) return supplierCurrency;
-    if (isBoxFunding) return boxCurrency;
-    return activeCurrency;
-  }, [isTransfer, isSupplierFunding, isBoxFunding, transferCurrency, supplierCurrency, boxCurrency, activeCurrency]);
 
   const computed = useMemo(() => {
     const parsedAmount = numberValue(activeAmount);
@@ -445,7 +420,7 @@ function AddTransactionPage() {
       customer_amount: Number(customerAmount),
       customer_exchange_rate: Number(customerExchangeRate),
 
-      commission_type: commissionType,
+      commission_type: commissionMode === "none" ? "fixed" : commissionType,
       commission_rate: commissionNumber,
 
       notes: mergedNotes || null,
@@ -503,13 +478,13 @@ function AddTransactionPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="إضافة معاملة جديدة"
-        subtitle="أضف معاملة مالية جديدة وقم بتسجيل التفاصيل بدقة"
+        title="إضافة عملية جديدة"
+        subtitle="أضف عملية تحويل مع بيانات العميل والمورد أو الصندوق"
         icon={BadgePlus}
       />
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <Section title="نوع المعاملة" subtitle="اختر نوع المعاملة التي ترغب في تنفيذها">
+        <Section title="نوع العملية" subtitle="اختر نوع العملية التي ترغب في تنفيذها">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {PAGE_TYPES.map((type) => {
               const Icon = type.icon;
@@ -550,7 +525,7 @@ function AddTransactionPage() {
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
           <div className="space-y-5">
-            <Section title="تفاصيل المعاملة" subtitle="أدخل بيانات المعاملة بدقة" icon={FileText}>
+            <Section title="تفاصيل العملية" subtitle="أدخل بيانات العملية بدقة" icon={FileText}>
               {isOperation ? (
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -1055,7 +1030,7 @@ function AddTransactionPage() {
               )}
             </Section>
 
-            <Section title="العمولة" subtitle="العمولة تخصم من مبلغ العميل في الملخص" icon={Percent}>
+            <Section title="العمولة" subtitle="معاينة فقط، والخادم هو مصدر الحقيقة بعد الحفظ" icon={Percent}>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { key: "none", label: "بدون عمولة", icon: X },
@@ -1125,7 +1100,7 @@ function AddTransactionPage() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
-                placeholder="أدخل وصفًا مختصرًا للمعاملة (اختياري)..."
+                placeholder="أدخل وصفًا مختصرًا للعملية (اختياري)..."
                 className="ep-input resize-none py-3"
                 style={{ height: "auto" }}
               />
@@ -1138,13 +1113,13 @@ function AddTransactionPage() {
                 <Calculator className="h-5 w-5 text-slate-400" />
 
                 <div className="text-right">
-                  <h3 className="text-base font-black text-slate-900">ملخص المعاملة</h3>
+                  <h3 className="text-base font-black text-slate-900">ملخص العملية</h3>
                   <p className="text-xs text-slate-500">المراجعة قبل الحفظ</p>
                 </div>
               </div>
 
               <div className="space-y-3 text-sm">
-                <SummaryRow label="نوع المعاملة" value={PAGE_TYPES.find((type) => type.key === pageType)?.label || "—"} />
+                <SummaryRow label="نوع العملية" value={PAGE_TYPES.find((type) => type.key === pageType)?.label || "—"} />
                 <SummaryRow label="حالة العملية" value={isTransfer || isBoxFunding ? "مكتملة" : getStatusLabel(operationStatus)} />
 
                 {referenceNumber && <SummaryRow label="الرقم المرجعي" value={referenceNumber} />}
@@ -1228,7 +1203,7 @@ function AddTransactionPage() {
               <div className="mt-5 space-y-2">
                 <button type="submit" disabled={loading} className="ep-btn ep-btn-primary h-11 w-full">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  حفظ المعاملة
+                  حفظ العملية
                 </button>
 
                 <button type="button" onClick={() => navigate("/transactions")} className="ep-btn ep-btn-ghost h-11 w-full">

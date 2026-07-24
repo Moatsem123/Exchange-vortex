@@ -17,7 +17,6 @@ const BoxesPage = lazy(() => import("./pages/BoxesPage"));
 const BoxGroupPage = lazy(() => import("./pages/BoxGroupPage"));
 const ExpensesPage = lazy(() => import("./pages/ExpensesPage"));
 const CapitalPage = lazy(() => import("./pages/CapitalPage"));
-const ReconciliationPage = lazy(() => import("./pages/ReconciliationPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ArchivePage = lazy(() => import("./pages/ArchivePage"));
@@ -68,7 +67,9 @@ function Shell() {
 
             <Route path="/customers" element={<CustomersPage />} />
 
+            <Route path="/operations" element={<TransactionsPage />} />
             <Route path="/transactions" element={<TransactionsPage />} />
+            <Route path="/add-operation" element={<AddTransactionPage />} />
             <Route path="/add-transaction" element={<AddTransactionPage />} />
 
             <Route path="/currencies" element={<CurrenciesPage />} />

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -14,6 +15,7 @@ import {
   Loader2,
   Plus,
   Search,
+  Send,
   Trash2,
   UserRound,
   Wallet,
@@ -26,30 +28,64 @@ import Badge from "../shared/Badge";
 import ConfirmDialog from "../shared/ConfirmDialog";
 import Pagination from "../shared/Pagination";
 import { useToast } from "../shared/Toast";
+import { useAuth } from "../context/AuthContext";
 import operationsService from "../services/operations";
 import dashboardService from "../services/dashboard";
+import boxesService from "../services/boxes";
 import { extractApiError, formatCompactNumber, formatDate, formatMoney, unwrapList } from "../shared/helpers";
+import {
+  describePendingReasons,
+  getCustomerDirectionMeta,
+  getCustomerSettlementMeta,
+  getOperationDirection,
+  getOperationStatusMeta,
+  getSupplierFulfillmentMeta,
+  getSupplierSettlementMeta,
+  moneyWithCurrency,
+  SETTLEMENT_DIRECTION_LABELS,
+  summarizeObligationsByType,
+  supplierSettlementTotals,
+} from "../shared/operationWorkflow";
 
 const PER_PAGE = 10;
 
 const STATUS_META = {
   completed: { label: "مكتملة", color: "emerald" },
-  pending: { label: "قيد التنفيذ", color: "amber" },
+  pending: { label: "معلقة", color: "amber" },
   cancelled: { label: "ملغاة", color: "rose" },
 };
 
 const TYPE_OPTIONS = [
   { value: "", label: "نوع العملية" },
-  { value: "supplier", label: "تمويل مورد" },
-  { value: "box", label: "تمويل صندوق" },
+  { value: "supplier", label: "مصدر الأموال: المورد" },
+  { value: "box", label: "مصدر الأموال: الصندوق" },
   { value: "transfer", label: "تحويل بين حسابات" },
 ];
 
 const STATUS_OPTIONS = [
   { value: "", label: "كل الحالات" },
-  { value: "pending", label: "قيد التنفيذ" },
+  { value: "pending", label: "معلقة" },
   { value: "completed", label: "مكتملة" },
   { value: "cancelled", label: "ملغاة" },
+];
+
+const CUSTOMER_SETTLEMENT_OPTIONS = [
+  { value: "", label: "تسوية العميل" },
+  { value: "pending", label: "غير مسددة" },
+  { value: "completed", label: "مسددة" },
+];
+
+const SUPPLIER_FULFILLMENT_OPTIONS = [
+  { value: "", label: "تنفيذ المورد" },
+  { value: "pending", label: "لم ينفذ" },
+  { value: "completed", label: "نفذ" },
+];
+
+const SUPPLIER_SETTLEMENT_OPTIONS = [
+  { value: "", label: "تسوية المورد" },
+  { value: "unsettled", label: "غير مسدد" },
+  { value: "partially_settled", label: "مسدد جزئياً" },
+  { value: "settled", label: "تمت التسوية" },
 ];
 
 function unwrapPayload(res) {
@@ -57,7 +93,7 @@ function unwrapPayload(res) {
 }
 
 function getStatusMeta(status) {
-  return STATUS_META[status] || STATUS_META.pending;
+  return getOperationStatusMeta(status) || STATUS_META.pending;
 }
 
 function getOperationType(operation) {
@@ -78,7 +114,7 @@ function getOperationType(operation) {
   if (operation?.supplier_id || operation?.supplier) {
     return {
       key: "supplier",
-      label: "تمويل مورد",
+      label: "مصدر الأموال: المورد",
       color: "violet",
       icon: Building2,
       bgColor: "bg-violet-50",
@@ -89,7 +125,7 @@ function getOperationType(operation) {
 
   return {
     key: "box",
-    label: "تمويل صندوق",
+    label: "مصدر الأموال: الصندوق",
     color: "teal",
     icon: Wallet,
     bgColor: "bg-teal-50",
@@ -119,6 +155,10 @@ function getSearchText(operation) {
     operation?.reference_number,
     operation?.notes,
     operation?.status,
+    operation?.customer_direction,
+    operation?.customer_settlement_status,
+    operation?.supplier_fulfillment_status,
+    operation?.supplier_settlement_status,
     operation?.customer_currency,
     operation?.supplier_currency,
     getCustomerName(operation),
@@ -138,10 +178,25 @@ function matchesType(operation, type) {
   return getOperationType(operation).key === type;
 }
 
+function getCustomerSettlementFilterValue(operation) {
+  return operation?.customer_settlement_status || "pending";
+}
+
+function getSupplierFulfillmentFilterValue(operation) {
+  if (!operation?.supplier_id && !operation?.supplier) return "";
+  return operation?.supplier_fulfillment_status || "pending";
+}
+
+function getSupplierSettlementFilterValue(operation) {
+  if (!operation?.supplier_id && !operation?.supplier) return "";
+  return operation?.supplier_settlement_status || "unsettled";
+}
+
 function TransactionsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
+  const { hasPermission } = useAuth();
 
   const [items, setItems] = useState([]);
   const [meta, setMeta] = useState({
@@ -157,10 +212,16 @@ function TransactionsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [typeInput, setTypeInput] = useState("");
   const [statusInput, setStatusInput] = useState("");
+  const [customerSettlementInput, setCustomerSettlementInput] = useState("");
+  const [supplierFulfillmentInput, setSupplierFulfillmentInput] = useState("");
+  const [supplierSettlementInput, setSupplierSettlementInput] = useState("");
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [customerSettlementFilter, setCustomerSettlementFilter] = useState("");
+  const [supplierFulfillmentFilter, setSupplierFulfillmentFilter] = useState("");
+  const [supplierSettlementFilter, setSupplierSettlementFilter] = useState("");
   const [page, setPage] = useState(1);
 
   const [stats, setStats] = useState({
@@ -178,7 +239,19 @@ function TransactionsPage() {
 
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
+  const [customerSettlementAction, setCustomerSettlementAction] = useState(null);
+  const [supplierFulfillmentAction, setSupplierFulfillmentAction] = useState(null);
+  const [supplierSettlementAction, setSupplierSettlementAction] = useState(null);
+  const [boxes, setBoxes] = useState([]);
   const [busy, setBusy] = useState(false);
+
+  const canEditOperation = hasPermission?.([
+    "transaction.update",
+    "transaction.create",
+    "operation.update",
+    "operation.complete",
+  ]);
+  const canDeleteOperation = hasPermission?.(["transaction.delete", "operation.cancel", "operation.delete"]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,8 +259,24 @@ function TransactionsPage() {
 
     try {
       const res = await operationsService.list({
-        page: search || typeFilter || statusFilter ? 1 : page,
-        per_page: search || typeFilter || statusFilter ? 100 : PER_PAGE,
+        page:
+          search ||
+          typeFilter ||
+          statusFilter ||
+          customerSettlementFilter ||
+          supplierFulfillmentFilter ||
+          supplierSettlementFilter
+            ? 1
+            : page,
+        per_page:
+          search ||
+          typeFilter ||
+          statusFilter ||
+          customerSettlementFilter ||
+          supplierFulfillmentFilter ||
+          supplierSettlementFilter
+            ? 100
+            : PER_PAGE,
         ...(statusFilter && { status: statusFilter }),
       });
 
@@ -198,14 +287,39 @@ function TransactionsPage() {
         const passSearch = term ? getSearchText(operation).includes(term) : true;
         const passType = matchesType(operation, typeFilter);
         const passStatus = statusFilter ? operation.status === statusFilter : true;
-        return passSearch && passType && passStatus;
+        const passCustomerSettlement = customerSettlementFilter
+          ? getCustomerSettlementFilterValue(operation) === customerSettlementFilter
+          : true;
+        const passSupplierFulfillment = supplierFulfillmentFilter
+          ? getSupplierFulfillmentFilterValue(operation) === supplierFulfillmentFilter
+          : true;
+        const passSupplierSettlement = supplierSettlementFilter
+          ? getSupplierSettlementFilterValue(operation) === supplierSettlementFilter
+          : true;
+
+        return (
+          passSearch &&
+          passType &&
+          passStatus &&
+          passCustomerSettlement &&
+          passSupplierFulfillment &&
+          passSupplierSettlement
+        );
       });
+
+      const hasLocalFilters =
+        search ||
+        typeFilter ||
+        statusFilter ||
+        customerSettlementFilter ||
+        supplierFulfillmentFilter ||
+        supplierSettlementFilter;
 
       setItems(filteredList);
       setMeta({
-        total: search || typeFilter || statusFilter ? filteredList.length : Number(m?.total ?? filteredList.length),
-        current_page: search || typeFilter || statusFilter ? 1 : Number(m?.current_page ?? page),
-        last_page: search || typeFilter || statusFilter ? 1 : Number(m?.last_page ?? 1),
+        total: hasLocalFilters ? filteredList.length : Number(m?.total ?? filteredList.length),
+        current_page: hasLocalFilters ? 1 : Number(m?.current_page ?? page),
+        last_page: hasLocalFilters ? 1 : Number(m?.last_page ?? 1),
         per_page: Number(m?.per_page ?? PER_PAGE),
       });
     } catch (err) {
@@ -214,7 +328,15 @@ function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, typeFilter, statusFilter, page]);
+  }, [
+    search,
+    typeFilter,
+    statusFilter,
+    customerSettlementFilter,
+    supplierFulfillmentFilter,
+    supplierSettlementFilter,
+    page,
+  ]);
 
   useEffect(() => {
     load();
@@ -246,6 +368,13 @@ function TransactionsPage() {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  useEffect(() => {
+    boxesService
+      .list({ per_page: 100 })
+      .then((res) => setBoxes(unwrapList(res).items))
+      .catch(() => setBoxes([]));
+  }, []);
 
   useEffect(() => {
     if (!selectedId) {
@@ -340,10 +469,66 @@ function TransactionsPage() {
     }
   }
 
+  async function handleCustomerSettlementSubmit(payload) {
+    if (!customerSettlementAction) return;
+
+    setBusy(true);
+
+    try {
+      await operationsService.settleCustomer(customerSettlementAction.id, payload);
+      toast.success("تم تسجيل تسوية العميل");
+      setCustomerSettlementAction(null);
+      await refreshAll();
+    } catch (err) {
+      toast.error(extractApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSupplierFulfillmentSubmit(operation) {
+    if (!operation) return;
+
+    setBusy(true);
+
+    try {
+      await operationsService.fulfillSupplier(operation.id, {
+        supplier_fulfillment_status: "completed",
+      });
+      toast.success("تم تسجيل تنفيذ المورد للعملية");
+      setSupplierFulfillmentAction(null);
+      await refreshAll();
+    } catch (err) {
+      toast.error(extractApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSupplierSettlementSubmit(payload) {
+    if (!supplierSettlementAction) return;
+
+    setBusy(true);
+
+    try {
+      await operationsService.settleSupplier(supplierSettlementAction.id, payload);
+      toast.success("تم تسجيل تسوية المورد");
+      setSupplierSettlementAction(null);
+      await refreshAll();
+    } catch (err) {
+      toast.error(extractApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function handleApplyFilters() {
     setSearch(searchInput.trim());
     setTypeFilter(typeInput);
     setStatusFilter(statusInput);
+    setCustomerSettlementFilter(customerSettlementInput);
+    setSupplierFulfillmentFilter(supplierFulfillmentInput);
+    setSupplierSettlementFilter(supplierSettlementInput);
     setPage(1);
   }
 
@@ -363,9 +548,15 @@ function TransactionsPage() {
     setSearchInput("");
     setTypeInput("");
     setStatusInput("");
+    setCustomerSettlementInput("");
+    setSupplierFulfillmentInput("");
+    setSupplierSettlementInput("");
     setSearch("");
     setTypeFilter("");
     setStatusFilter("");
+    setCustomerSettlementFilter("");
+    setSupplierFulfillmentFilter("");
+    setSupplierSettlementFilter("");
     setPage(1);
   }
 
@@ -379,8 +570,8 @@ function TransactionsPage() {
             </div>
 
             <div>
-              <h1 className="text-2xl font-black text-slate-900">المعاملات</h1>
-              <p className="mt-1 text-sm text-slate-500">عرض وإدارة جميع العمليات والتحويلات</p>
+              <h1 className="text-2xl font-black text-slate-900">العمليات</h1>
+              <p className="mt-1 text-sm text-slate-500">عرض حالة العميل والمورد والتسويات النقدية لكل عملية</p>
             </div>
           </div>
         </div>
@@ -389,12 +580,12 @@ function TransactionsPage() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate("/add-transaction")}
+              onClick={() => navigate("/add-operation")}
               className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl px-5 text-sm font-black text-white shadow-lg shadow-teal-500/20 transition hover:shadow-xl hover:shadow-teal-500/30"
               style={{ background: "hsl(179, 87%, 28%)" }}
             >
               <Plus className="h-4 w-4" />
-              إضافة معاملة
+              إضافة عملية
             </button>
 
             <button
@@ -408,6 +599,36 @@ function TransactionsPage() {
 
             <FilterSelect value={typeInput} onChange={handleTypeChange} options={TYPE_OPTIONS} placeholder="نوع العملية" />
             <FilterSelect value={statusInput} onChange={handleStatusChange} options={STATUS_OPTIONS} placeholder="الحالة" />
+            <FilterSelect
+              value={customerSettlementInput}
+              onChange={(value) => {
+                setCustomerSettlementInput(value);
+                setCustomerSettlementFilter(value);
+                setPage(1);
+              }}
+              options={CUSTOMER_SETTLEMENT_OPTIONS}
+              placeholder="تسوية العميل"
+            />
+            <FilterSelect
+              value={supplierFulfillmentInput}
+              onChange={(value) => {
+                setSupplierFulfillmentInput(value);
+                setSupplierFulfillmentFilter(value);
+                setPage(1);
+              }}
+              options={SUPPLIER_FULFILLMENT_OPTIONS}
+              placeholder="تنفيذ المورد"
+            />
+            <FilterSelect
+              value={supplierSettlementInput}
+              onChange={(value) => {
+                setSupplierSettlementInput(value);
+                setSupplierSettlementFilter(value);
+                setPage(1);
+              }}
+              options={SUPPLIER_SETTLEMENT_OPTIONS}
+              placeholder="تسوية المورد"
+            />
 
             <div className="relative min-w-[260px] flex-1 max-w-md">
               <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -433,9 +654,9 @@ function TransactionsPage() {
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard label="إجمالي العمليات" value={stats.total} icon={ArrowRightLeft} color="blue" suffix="عملية" loading={stats.loading} />
-          <StatsCard label="قيد التنفيذ" value={stats.pending} icon={Clock3} color="amber" suffix="عملية" loading={stats.loading} />
+          <StatsCard label="معلقة" value={stats.pending} icon={Clock3} color="amber" suffix="عملية" loading={stats.loading} />
           <StatsCard label="مكتملة" value={stats.completed} icon={CheckCheck} color="emerald" suffix="عملية" loading={stats.loading} />
-          <StatsCard label="المبلغ المعلق" value={stats.pendingAmount} icon={Coins} color="violet" suffix="USD" loading={stats.loading} />
+          <StatsCard label="مبالغ عمليات معلقة" value={stats.pendingAmount} icon={Coins} color="violet" suffix="USD" loading={stats.loading} />
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -446,7 +667,7 @@ function TransactionsPage() {
           ) : error ? (
             <ErrorState error={error} onRetry={load} />
           ) : items.length === 0 ? (
-            <EmptyState icon={ArrowRightLeft} title="لا توجد معاملات" description="ابدأ بإضافة معاملة جديدة" />
+            <EmptyState icon={ArrowRightLeft} title="لا توجد عمليات" description="ابدأ بإضافة عملية جديدة" />
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -456,12 +677,15 @@ function TransactionsPage() {
                       <th className="whitespace-nowrap px-4 py-3">الإجراءات</th>
                       <th className="whitespace-nowrap px-4 py-3">المرجع والموظف</th>
                       <th className="whitespace-nowrap px-4 py-3">العميل</th>
-                      <th className="whitespace-nowrap px-4 py-3">مصدر الأموال</th>
+                      <th className="whitespace-nowrap px-4 py-3">المورد / الصندوق</th>
+                      <th className="whitespace-nowrap px-4 py-3">الاتجاه</th>
                       <th className="whitespace-nowrap px-4 py-3">مبلغ العميل</th>
                       <th className="whitespace-nowrap px-4 py-3">مبلغ المصدر</th>
                       <th className="whitespace-nowrap px-4 py-3">العمولة</th>
-                      <th className="whitespace-nowrap px-4 py-3">نوع العملية</th>
                       <th className="whitespace-nowrap px-4 py-3">الحالة</th>
+                      <th className="whitespace-nowrap px-4 py-3">تسوية العميل</th>
+                      <th className="whitespace-nowrap px-4 py-3">تنفيذ المورد</th>
+                      <th className="whitespace-nowrap px-4 py-3">تسوية المورد</th>
                       <th className="whitespace-nowrap px-4 py-3">التاريخ</th>
                     </tr>
                   </thead>
@@ -472,10 +696,15 @@ function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         busy={busy}
+                        canEdit={canEditOperation}
+                        canDelete={canDeleteOperation}
                         onView={() => setSelectedId(operation.id)}
                         onDelete={() => setConfirmDelete(operation)}
                         onComplete={() => handleComplete(operation)}
                         onCancel={() => setConfirmCancel(operation)}
+                        onSettleCustomer={() => setCustomerSettlementAction(operation)}
+                        onFulfillSupplier={() => setSupplierFulfillmentAction(operation)}
+                        onSettleSupplier={() => setSupplierSettlementAction(operation)}
                       />
                     ))}
                   </tbody>
@@ -502,16 +731,39 @@ function TransactionsPage() {
         )}
       </AnimatePresence>
 
+      <CustomerSettlementModal
+        operation={customerSettlementAction}
+        boxes={boxes}
+        loading={busy}
+        onClose={() => setCustomerSettlementAction(null)}
+        onSubmit={handleCustomerSettlementSubmit}
+      />
+
+      <SupplierFulfillmentModal
+        operation={supplierFulfillmentAction}
+        loading={busy}
+        onClose={() => setSupplierFulfillmentAction(null)}
+        onConfirm={handleSupplierFulfillmentSubmit}
+      />
+
+      <SupplierSettlementModal
+        operation={supplierSettlementAction}
+        boxes={boxes}
+        loading={busy}
+        onClose={() => setSupplierSettlementAction(null)}
+        onSubmit={handleSupplierSettlementSubmit}
+      />
+
       <AnimatePresence>
         {confirmDelete && (
           <ConfirmDialog
             open={!!confirmDelete}
             title="حذف العملية"
-            message={`هل أنت متأكد من حذف العملية "${confirmDelete.reference_number}"؟`}
-            confirmLabel="حذف"
-            confirmColor="rose"
+            description={`هل أنت متأكد من حذف العملية "${confirmDelete.reference_number}"؟ قد يؤثر ذلك على الأرصدة المرتبطة.`}
+            confirmText="حذف"
+            variant="danger"
             onConfirm={handleDelete}
-            onCancel={() => setConfirmDelete(null)}
+            onClose={() => setConfirmDelete(null)}
             loading={busy}
           />
         )}
@@ -522,11 +774,11 @@ function TransactionsPage() {
           <ConfirmDialog
             open={!!confirmCancel}
             title="إلغاء العملية"
-            message={`هل أنت متأكد من إلغاء العملية "${confirmCancel.reference_number}"؟`}
-            confirmLabel="إلغاء العملية"
-            confirmColor="rose"
+            description={`هل أنت متأكد من إلغاء العملية "${confirmCancel.reference_number}"؟ لن يمكن متابعة تسوياتها بعد الإلغاء.`}
+            confirmText="إلغاء العملية"
+            variant="danger"
             onConfirm={handleCancel}
-            onCancel={() => setConfirmCancel(null)}
+            onClose={() => setConfirmCancel(null)}
             loading={busy}
           />
         )}
@@ -636,11 +888,41 @@ function FilterSelect({ value, onChange, options, placeholder }) {
   );
 }
 
-function TransactionRow({ operation, onView, onDelete, onComplete, onCancel, busy }) {
+function TransactionRow({
+  operation,
+  onView,
+  onDelete,
+  onComplete,
+  onCancel,
+  onSettleCustomer,
+  onFulfillSupplier,
+  onSettleSupplier,
+  busy,
+  canEdit,
+  canDelete,
+}) {
   const meta = getOperationType(operation);
   const statusMeta = getStatusMeta(operation.status);
-  const Icon = meta.icon;
+  const direction = getOperationDirection(operation);
+  const directionMeta = getCustomerDirectionMeta(direction);
+  const customerSettlementMeta = getCustomerSettlementMeta(operation.customer_settlement_status, direction);
+  const supplierFulfillmentMeta = getSupplierFulfillmentMeta(operation.supplier_fulfillment_status);
+  const supplierSettlementMeta = getSupplierSettlementMeta(operation.supplier_settlement_status);
   const isPending = operation.status === "pending";
+  const hasSupplier = !!(operation.supplier_id || operation.supplier);
+  const canSettleCustomer = canEdit && operation.status !== "cancelled" && operation.customer_settlement_status !== "completed";
+  const canFulfillSupplier = canEdit && hasSupplier && operation.status !== "cancelled" && operation.supplier_fulfillment_status !== "completed";
+  const canSettleSupplier =
+    canEdit &&
+    hasSupplier &&
+    operation.status !== "cancelled" &&
+    operation.supplier_fulfillment_status === "completed" &&
+    operation.supplier_settlement_status !== "settled";
+  const canCompleteCommercially =
+    canEdit &&
+    isPending &&
+    operation.customer_settlement_status === "completed" &&
+    (!hasSupplier || operation.supplier_fulfillment_status === "completed");
 
   return (
     <tr className="border-b border-slate-100 text-right transition hover:bg-slate-50/50">
@@ -650,11 +932,25 @@ function TransactionRow({ operation, onView, onDelete, onComplete, onCancel, bus
             <Eye className="h-4 w-4" />
           </button>
 
-          {isPending && (
+          {isPending && canEdit && (
             <>
-              <button type="button" onClick={onComplete} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 disabled:opacity-50" title="تحويل إلى مكتملة">
-                <CheckCheck className="h-4 w-4" />
-              </button>
+              {canSettleCustomer && (
+                <button type="button" onClick={onSettleCustomer} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-teal-200 bg-teal-50 text-teal-600 transition hover:bg-teal-100 disabled:opacity-50" title="تسجيل تسوية العميل">
+                  <Wallet className="h-4 w-4" />
+                </button>
+              )}
+
+              {canFulfillSupplier && (
+                <button type="button" onClick={onFulfillSupplier} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-600 transition hover:bg-violet-100 disabled:opacity-50" title="تسجيل تنفيذ المورد">
+                  <Send className="h-4 w-4" />
+                </button>
+              )}
+
+              {canCompleteCommercially && (
+                <button type="button" onClick={onComplete} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 disabled:opacity-50" title="إكمال العملية حسب قواعد العمل">
+                  <CheckCheck className="h-4 w-4" />
+                </button>
+              )}
 
               <button type="button" onClick={onCancel} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-600 transition hover:bg-amber-100 disabled:opacity-50" title="إلغاء العملية">
                 <X className="h-4 w-4" />
@@ -662,9 +958,17 @@ function TransactionRow({ operation, onView, onDelete, onComplete, onCancel, bus
             </>
           )}
 
-          <button type="button" onClick={onDelete} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100 disabled:opacity-50" title="حذف">
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {canSettleSupplier && (
+            <button type="button" onClick={onSettleSupplier} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-600 transition hover:bg-blue-100 disabled:opacity-50" title="تسجيل تسوية المورد">
+              <Building2 className="h-4 w-4" />
+            </button>
+          )}
+
+          {canDelete && (
+            <button type="button" onClick={onDelete} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100 disabled:opacity-50" title="حذف">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </td>
 
@@ -681,6 +985,11 @@ function TransactionRow({ operation, onView, onDelete, onComplete, onCancel, bus
       <td className="px-4 py-3">
         <p className="text-sm font-bold text-slate-900">{operation.supplier ? getSupplierName(operation) : getBoxName(operation)}</p>
         <p className="text-xs text-slate-500">{operation.supplier ? "مورد" : "صندوق"}</p>
+      </td>
+
+      <td className="px-4 py-3">
+        <Badge color="blue">{directionMeta.shortLabel}</Badge>
+        <p className="mt-1 text-[11px] text-slate-500">{directionMeta.cashImpact}</p>
       </td>
 
       <td className="px-4 py-3">
@@ -703,11 +1012,28 @@ function TransactionRow({ operation, onView, onDelete, onComplete, onCancel, bus
       </td>
 
       <td className="px-4 py-3">
-        <Badge color={meta.color} icon={Icon}>{meta.label}</Badge>
+        <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
+        <p className="mt-1 text-[11px] text-slate-500">{meta.label}</p>
       </td>
 
       <td className="px-4 py-3">
-        <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
+        <Badge color={customerSettlementMeta.color}>{customerSettlementMeta.label}</Badge>
+      </td>
+
+      <td className="px-4 py-3">
+        {hasSupplier ? (
+          <Badge color={supplierFulfillmentMeta.color}>{supplierFulfillmentMeta.shortLabel}</Badge>
+        ) : (
+          <span className="text-xs font-bold text-slate-400">لا يوجد مورد</span>
+        )}
+      </td>
+
+      <td className="px-4 py-3">
+        {hasSupplier ? (
+          <Badge color={supplierSettlementMeta.color}>{supplierSettlementMeta.label}</Badge>
+        ) : (
+          <span className="text-xs font-bold text-slate-400">لا يوجد مورد</span>
+        )}
       </td>
 
       <td className="px-4 py-3">
@@ -733,6 +1059,15 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
 
   const meta = data ? getOperationType(data) : null;
   const statusMeta = data ? getStatusMeta(data.status) : null;
+  const direction = data ? getOperationDirection(data) : "customer_pays_intermediary";
+  const directionMeta = getCustomerDirectionMeta(direction);
+  const customerSettlementMeta = data ? getCustomerSettlementMeta(data.customer_settlement_status, direction) : null;
+  const supplierFulfillmentMeta = data ? getSupplierFulfillmentMeta(data.supplier_fulfillment_status) : null;
+  const supplierSettlementMeta = data ? getSupplierSettlementMeta(data.supplier_settlement_status) : null;
+  const pendingReasons = data ? describePendingReasons(data) : [];
+  const receivables = data ? summarizeObligationsByType(data, "receivable") : [];
+  const payables = data ? summarizeObligationsByType(data, "payable") : [];
+  const supplierTotals = data ? supplierSettlementTotals(data) : null;
   const Icon = meta?.icon;
 
   return (
@@ -779,6 +1114,20 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
               <p className="mt-1 text-sm text-slate-500">صافي العميل: {formatMoney(data?.customer_net_amount || data?.customer_amount || 0)}</p>
             </div>
 
+            {pendingReasons.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-right">
+                <p className="mb-2 text-sm font-black text-amber-900">
+                  {data?.status === "completed" ? "الوضع المالي للعملية" : "سبب تعليق العملية"}
+                </p>
+
+                <div className="space-y-1.5">
+                  {pendingReasons.map((reason) => (
+                    <p key={reason} className="text-xs font-bold text-amber-800">{reason}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between">
                 <div className="flex-1 text-right">
@@ -793,20 +1142,46 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-sm font-black text-slate-900">معلومات العملية</h3>
+              <h3 className="text-sm font-black text-slate-900">ملخص العملية</h3>
               <InfoRow label="تاريخ العملية" value={formatDate(data?.transaction_date || data?.created_at)} />
               <InfoRow label="الموظف المنفذ" value={getCreatorName(data)} />
               <InfoRow label="العميل" value={getCustomerName(data)} />
-              <InfoRow label="مصدر الأموال" value={data?.supplier ? getSupplierName(data) : getBoxName(data)} />
-              <InfoRow label="نوع المصدر" value={data?.supplier ? "مورد" : "صندوق"} />
-              <InfoRow label="مبلغ العميل" value={`${formatMoney(data?.customer_amount || 0)} ${data?.customer_currency || "USD"}`} />
-              <InfoRow label="سعر صرف العميل" value={data?.customer_exchange_rate || "1"} />
-              <InfoRow label="مبلغ المورد" value={`${formatMoney(data?.supplier_amount || 0)} ${data?.supplier_currency || "—"}`} />
-              <InfoRow label="سعر صرف المورد" value={data?.supplier_exchange_rate || "—"} />
+              <InfoRow label="المورد" value={data?.supplier ? getSupplierName(data) : "لا يوجد مورد"} />
+              <InfoRow label="العمولة" value={moneyWithCurrency(data?.commission_amount || 0, data?.commission_currency || "USD")} />
               <InfoRow label="نوع العمولة" value={data?.commission_type === "percentage" ? "نسبة" : "ثابت"} />
-              <InfoRow label="قيمة العمولة" value={`${formatMoney(data?.commission_amount || 0)} USD`} />
               <InfoRow label="الملاحظات" value={data?.notes || "—"} />
             </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-black text-slate-900">حالة العميل المالية</h3>
+              <InfoRow label="الاتجاه" value={directionMeta.label} />
+              <InfoRow label="المبلغ" value={moneyWithCurrency(data?.customer_amount || 0, data?.customer_currency || "USD")} />
+              <InfoRow label="صافي العميل" value={moneyWithCurrency(data?.customer_net_amount || data?.customer_amount || 0, data?.customer_currency || "USD")} />
+              <InfoRow label="سعر الصرف" value={data?.customer_exchange_rate || "1"} />
+              <InfoRow label="الحالة" value={customerSettlementMeta?.fullLabel || "—"} />
+              <InfoRow label="تاريخ التسوية" value={formatDate(data?.customer_settled_at)} />
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-black text-slate-900">تنفيذ المورد</h3>
+              <InfoRow label="المورد" value={data?.supplier ? getSupplierName(data) : "لا يوجد مورد"} />
+              <InfoRow label="المبلغ" value={data?.supplier ? moneyWithCurrency(data?.supplier_amount || 0, data?.supplier_currency || "USD") : "—"} />
+              <InfoRow label="سعر الصرف" value={data?.supplier_exchange_rate || "—"} />
+              <InfoRow label="الحالة" value={data?.supplier ? supplierFulfillmentMeta?.label : "لا يوجد مورد"} />
+              <InfoRow label="تاريخ التنفيذ" value={formatDate(data?.supplier_fulfilled_at)} />
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-black text-slate-900">تسوية المورد</h3>
+              <InfoRow label="الحالة" value={data?.supplier ? supplierSettlementMeta?.label : "لا يوجد مورد"} />
+              <InfoRow label="أصل المستحق للمورد" value={data?.supplier ? moneyWithCurrency(supplierTotals?.original || 0, supplierTotals?.currency) : "—"} />
+              <InfoRow label="تمت تسويته" value={data?.supplier ? moneyWithCurrency(supplierTotals?.settled || 0, supplierTotals?.currency) : "—"} />
+              <InfoRow label="المتبقي علينا" value={data?.supplier ? moneyWithCurrency(supplierTotals?.remaining || 0, supplierTotals?.currency) : "—"} />
+            </div>
+
+            <FinancialPosition receivables={receivables} payables={payables} />
+
+            <SettlementHistory settlements={data?.settlements || []} />
 
             {data?.customer && <CustomerMiniCard title="بيانات العميل" customer={data.customer} />}
             {data?.supplier && <CustomerMiniCard title="بيانات المورد" customer={data.supplier} />}
@@ -834,6 +1209,325 @@ function CustomerMiniCard({ title, customer }) {
           <span>{customer?.type === "supplier" ? "مورد" : "عميل"}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function FinancialPosition({ receivables, payables }) {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-black text-slate-900">الوضع المالي</h3>
+
+      <ObligationSummary title="المبالغ المستحقة لنا" items={receivables} empty="لا توجد مبالغ مستحقة لنا ظاهرة في بيانات العملية" />
+      <ObligationSummary title="المبالغ المستحقة علينا" items={payables} empty="لا توجد مبالغ مستحقة علينا ظاهرة في بيانات العملية" />
+    </div>
+  );
+}
+
+function ObligationSummary({ title, items, empty }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-right">
+      <p className="mb-3 text-xs font-black text-slate-600">{title}</p>
+
+      {items.length === 0 ? (
+        <p className="text-[11px] font-bold text-slate-400">{empty}</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={`${item.role}-${item.currency}`} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
+              <span className="font-mono text-xs font-black text-slate-900" dir="ltr">
+                {moneyWithCurrency(item.remaining, item.currency)}
+              </span>
+              <span className="text-xs font-bold text-slate-600">{item.roleLabel}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettlementHistory({ settlements }) {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-black text-slate-900">سجل التسويات</h3>
+
+      {!settlements.length ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-right">
+          <p className="text-[11px] font-bold text-slate-400">
+            لا يوجد سجل تسويات في استجابة تفاصيل العملية الحالية
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {settlements.map((settlement) => (
+            <div key={settlement.id} className="rounded-xl border border-slate-200 bg-white p-3 text-right">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="font-mono text-xs font-black text-slate-900" dir="ltr">
+                  {moneyWithCurrency(settlement.amount, settlement.currency)}
+                </span>
+                <Badge color={settlement.direction === "cash_in" ? "emerald" : "rose"}>
+                  {SETTLEMENT_DIRECTION_LABELS[settlement.direction] || settlement.direction}
+                </Badge>
+              </div>
+              <p className="text-[11px] font-bold text-slate-500">{formatDate(settlement.settlement_date || settlement.created_at)}</p>
+              {settlement.notes && <p className="mt-1 text-[11px] text-slate-500">{settlement.notes}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomerSettlementModal({ operation, boxes, loading, onClose, onSubmit }) {
+  const existingDirection = getOperationDirection(operation);
+  const [direction, setDirection] = useState(
+    existingDirection === "unspecified" ? "customer_pays_intermediary" : existingDirection
+  );
+  const directionMeta = getCustomerDirectionMeta(direction);
+  const [boxId, setBoxId] = useState("");
+  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split("T")[0]);
+  const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    const nextDirection = getOperationDirection(operation);
+    setDirection(nextDirection === "unspecified" ? "customer_pays_intermediary" : nextDirection);
+    setBoxId("");
+    setSettlementDate(new Date().toISOString().split("T")[0]);
+    setNotes("");
+  }, [operation?.id]);
+
+  if (!operation) return null;
+
+  const matchingBoxes = boxes.filter(
+    (box) => String(box.currency || "USD").toUpperCase() === String(operation.customer_currency || "USD").toUpperCase()
+  );
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    onSubmit({
+      customer_direction: direction,
+      customer_settlement_status: "completed",
+      box_id: Number(boxId),
+      settlement_date: settlementDate || undefined,
+      notes: notes || undefined,
+    });
+  }
+
+  return (
+    <WorkflowModal title="تسجيل تسوية العميل" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <ImpactBox
+          lines={[
+            `سيتم تسجيل ${directionMeta.settlementLabel} بمبلغ ${moneyWithCurrency(operation.customer_amount, operation.customer_currency)}.`,
+            directionMeta.cashImpact,
+          ]}
+        />
+
+        <ModalField label="اتجاه التسوية" required>
+          <select
+            value={direction}
+            onChange={(e) => setDirection(e.target.value)}
+            disabled={existingDirection !== "unspecified"}
+            className="ep-input appearance-none disabled:bg-slate-50 disabled:text-slate-500"
+          >
+            <option value="customer_pays_intermediary">العميل يرسل أموالاً</option>
+            <option value="intermediary_pays_customer">العميل يستلم أموالاً</option>
+          </select>
+        </ModalField>
+
+        <ModalField label="الصندوق" required>
+          <select value={boxId} onChange={(e) => setBoxId(e.target.value)} required className="ep-input appearance-none">
+            <option value="">اختر صندوقاً بعملة {operation.customer_currency || "USD"}</option>
+            {matchingBoxes.map((box) => (
+              <option key={box.id} value={box.id}>
+                {box.name} - {box.currency || "USD"} - {formatMoney(box.current_balance || 0)}
+              </option>
+            ))}
+          </select>
+        </ModalField>
+
+        <ModalField label="تاريخ التسوية">
+          <input type="date" value={settlementDate} onChange={(e) => setSettlementDate(e.target.value)} className="ep-input" />
+        </ModalField>
+
+        <ModalField label="ملاحظات">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="ep-input resize-none py-3" />
+        </ModalField>
+
+        <ModalActions loading={loading} onClose={onClose} confirmText="تسجيل التسوية" />
+      </form>
+    </WorkflowModal>
+  );
+}
+
+function SupplierFulfillmentModal({ operation, loading, onClose, onConfirm }) {
+  if (!operation) return null;
+
+  return (
+    <WorkflowModal title="تسجيل تنفيذ المورد" onClose={onClose}>
+      <div className="space-y-4">
+        <ImpactBox
+          lines={[
+            `سيتم تسجيل أن المورد "${getSupplierName(operation)}" نفذ العملية.`,
+            `سيظهر مستحق علينا للمورد بقيمة ${moneyWithCurrency(operation.supplier_amount, operation.supplier_currency)} حتى تتم التسوية النقدية.`,
+          ]}
+        />
+
+        <ModalActions loading={loading} onClose={onClose} onConfirm={() => onConfirm(operation)} confirmText="تأكيد التنفيذ" />
+      </div>
+    </WorkflowModal>
+  );
+}
+
+function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit }) {
+  const totals = supplierSettlementTotals(operation);
+  const [amount, setAmount] = useState("");
+  const [boxId, setBoxId] = useState("");
+  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split("T")[0]);
+  const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    setAmount(operation ? String(totals.remaining || "") : "");
+    setBoxId("");
+    setSettlementDate(new Date().toISOString().split("T")[0]);
+    setNotes("");
+  }, [operation?.id]);
+
+  if (!operation) return null;
+
+  const matchingBoxes = boxes.filter(
+    (box) => String(box.currency || "USD").toUpperCase() === String(totals.currency || "USD").toUpperCase()
+  );
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    onSubmit({
+      amount: Number(amount),
+      box_id: Number(boxId),
+      operation_obligation_id: totals.obligationId || undefined,
+      settlement_date: settlementDate || undefined,
+      notes: notes || undefined,
+    });
+  }
+
+  return (
+    <WorkflowModal title="تسجيل تسوية المورد" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <ImpactBox
+          lines={[
+            `المستحق للمورد: ${moneyWithCurrency(totals.original, totals.currency)}.`,
+            `تمت تسويته: ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي: ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
+            "سيتم خصم مبلغ التسوية من الصندوق المختار.",
+          ]}
+        />
+
+        <ModalField label="مبلغ التسوية" required>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            max={totals.remaining || undefined}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+            className="ep-input"
+          />
+        </ModalField>
+
+        <ModalField label="الصندوق" required>
+          <select value={boxId} onChange={(e) => setBoxId(e.target.value)} required className="ep-input appearance-none">
+            <option value="">اختر صندوقاً بعملة {totals.currency || "USD"}</option>
+            {matchingBoxes.map((box) => (
+              <option key={box.id} value={box.id}>
+                {box.name} - {box.currency || "USD"} - {formatMoney(box.current_balance || 0)}
+              </option>
+            ))}
+          </select>
+        </ModalField>
+
+        <ModalField label="تاريخ التسوية">
+          <input type="date" value={settlementDate} onChange={(e) => setSettlementDate(e.target.value)} className="ep-input" />
+        </ModalField>
+
+        <ModalField label="ملاحظات">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="ep-input resize-none py-3" />
+        </ModalField>
+
+        <ModalActions loading={loading} onClose={onClose} confirmText="تسجيل التسوية" />
+      </form>
+    </WorkflowModal>
+  );
+}
+
+function WorkflowModal({ title, onClose, children }) {
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onMouseDown={onClose}
+      >
+        <motion.div
+          className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+          initial={{ opacity: 0, y: 16, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.96 }}
+          onMouseDown={(e) => e.stopPropagation()}
+          dir="rtl"
+        >
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+              <X className="h-4 w-4" />
+            </button>
+
+            <h3 className="text-base font-black text-slate-900">{title}</h3>
+          </div>
+
+          {children}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function ImpactBox({ lines }) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-right">
+      <p className="mb-2 text-xs font-black text-amber-900">الأثر المالي</p>
+      <div className="space-y-1.5">
+        {lines.map((line) => (
+          <p key={line} className="text-xs font-bold text-amber-800">{line}</p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModalField({ label, required, children }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-slate-700">
+        {label} {required && <span className="text-rose-500">*</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function ModalActions({ loading, onClose, onConfirm, confirmText }) {
+  return (
+    <div className="flex items-center gap-2 pt-2">
+      <button type="button" onClick={onClose} disabled={loading} className="ep-btn ep-btn-ghost h-11 flex-1">
+        إلغاء
+      </button>
+      <button type={onConfirm ? "button" : "submit"} onClick={onConfirm} disabled={loading} className="ep-btn ep-btn-primary h-11 flex-1">
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+        {confirmText}
+      </button>
     </div>
   );
 }

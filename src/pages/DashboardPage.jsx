@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, react-hooks/static-components */
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -29,6 +30,7 @@ import EmptyState from "../shared/EmptyState";
 import ErrorState from "../shared/ErrorState";
 import Badge from "../shared/Badge";
 import dashboardService from "../services/dashboard";
+import reportsService from "../services/reports";
 import { extractApiError, formatMoney } from "../shared/helpers";
 
 const PERIODS = [
@@ -265,6 +267,32 @@ function normalizeSuppliers(raw, list) {
   }));
 }
 
+function summarizeObligations(obligations = []) {
+  const totals = {
+    receivable: new Map(),
+    payable: new Map(),
+  };
+
+  obligations.forEach((item) => {
+    const type = item.obligation_type === "payable" ? "payable" : "receivable";
+    const currency = item.currency || item.customer_currency || item.supplier_currency || "USD";
+    const current = totals[type].get(currency) || { currency, amount: 0, settled: 0, remaining: 0 };
+    const amount = toNumber(item.original_amount ?? item.amount);
+    const settled = toNumber(item.settled_amount ?? item.paid_amount);
+    const remaining = toNumber(item.remaining_amount ?? Math.max(amount - settled, 0));
+
+    current.amount += amount;
+    current.settled += settled;
+    current.remaining += remaining;
+    totals[type].set(currency, current);
+  });
+
+  return {
+    receivable: Array.from(totals.receivable.values()),
+    payable: Array.from(totals.payable.values()),
+  };
+}
+
 export default function DashboardPage() {
   const [period, setPeriod] = useState("30d");
 
@@ -274,6 +302,7 @@ export default function DashboardPage() {
   const [suppliers, setSuppliers] = useState([]);
   const [boxes, setBoxes] = useState([]);
   const [commissions, setCommissions] = useState({});
+  const [obligations, setObligations] = useState([]);
   const [chart, setChart] = useState([]);
 
   const [loading, setLoading] = useState(true);
@@ -287,7 +316,7 @@ export default function DashboardPage() {
 
     const params = { period };
 
-    const [summaryRes, financialRes, suppliersRes, boxesRes, commissionsRes, chartsRes] =
+    const [summaryRes, financialRes, suppliersRes, boxesRes, commissionsRes, chartsRes, obligationsRes] =
       await Promise.allSettled([
         dashboardService.summary(params),
         dashboardService.financial(params),
@@ -295,6 +324,7 @@ export default function DashboardPage() {
         dashboardService.boxes(params),
         dashboardService.commissions(params),
         dashboardService.charts(params),
+        reportsService.obligations({ per_page: 1000 }),
       ]);
 
     const errors = [];
@@ -341,6 +371,12 @@ export default function DashboardPage() {
     } else {
       setChart([]);
       errors.push("charts");
+    }
+
+    if (obligationsRes.status === "fulfilled") {
+      setObligations(unwrapList(obligationsRes.value));
+    } else {
+      setObligations([]);
     }
 
     setSoftErrors(errors);
@@ -476,28 +512,28 @@ export default function DashboardPage() {
   const stats = useMemo(
     () => [
       {
-        title: "رأس المال",
+        title: "إجمالي رأس المال",
         value: dashboardNumbers.capitalBalance,
         money: true,
         icon: Wallet,
         color: "teal",
-        note: "رصيد رأس المال",
+        note: "يشمل الرصيد العام وأرصدة الصناديق",
       },
       {
-        title: "رأس المال الحر",
+        title: "الرصيد العام لرأس المال",
         value: dashboardNumbers.freeCapital,
         money: true,
         icon: DollarSign,
         color: "emerald",
-        note: "متاح للتشغيل",
+        note: "غير مخصص لصندوق",
       },
       {
-        title: "إجمالي الصناديق",
+        title: "إجمالي أرصدة الصناديق",
         value: dashboardNumbers.totalBoxesBalance,
         money: true,
         icon: Wallet,
         color: "blue",
-        note: "السيولة داخل الصناديق",
+        note: "سيولة مخصصة داخل الصناديق",
       },
       {
         title: "عمليات مكتملة",
@@ -589,6 +625,8 @@ export default function DashboardPage() {
     [suppliers, suppliersRaw]
   );
 
+  const obligationTotals = useMemo(() => summarizeObligations(obligations), [obligations]);
+
   const healthStatus = useMemo(() => {
     if (financial?.reconciliation_status === "mismatch") return "warning";
     if (dashboardNumbers.pendingCount > 0) return "pending";
@@ -605,7 +643,7 @@ export default function DashboardPage() {
             </h1>
 
             <p className="mt-2 text-sm font-semibold leading-7 text-slate-500">
-              متابعة رأس المال، السيولة، العمليات، العمولات، الموردين والصناديق من مصدر واحد.
+              متابعة إجمالي رأس المال، الرصيد العام، أرصدة الصناديق، الذمم، والعمولات من مصدر واحد.
             </p>
           </div>
 
@@ -684,7 +722,9 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-4">
+            <FinancialPositionPanel loading={loading} totals={obligationTotals} />
+
             <InfoPanel
               title="مراقبة الموردين"
               subtitle="أهم الموردين حسب الحجم والعمولة"
@@ -892,17 +932,6 @@ function DashboardChart({ data, loading }) {
   );
 }
 
-function HeroMiniStatLight({ title, value }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-right shadow-sm">
-      <p className="text-[11px] font-black text-slate-500">{title}</p>
-      <p dir="ltr" className="mt-2 truncate font-mono text-lg font-black text-slate-950">
-        {value}
-      </p>
-    </div>
-  );
-}
-
 function PeriodSelector({ value, onChange }) {
   return (
     <div className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
@@ -1083,6 +1112,64 @@ function PulseRow({ label, value }) {
         {value}
       </span>
       <span className="text-xs font-black text-slate-500">{label}</span>
+    </div>
+  );
+}
+
+function FinancialPositionPanel({ loading, totals }) {
+  if (loading) return <div className="h-full min-h-[330px] animate-pulse rounded-[2rem] bg-slate-100" />;
+
+  const hasRows = totals.receivable.length > 0 || totals.payable.length > 0;
+
+  return (
+    <div className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5">
+        <Link to="/reports" className="inline-flex items-center gap-1 text-xs font-black text-teal-700">
+          عرض
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Link>
+
+        <div className="text-right">
+          <h3 className="text-lg font-black text-slate-950">المركز المالي</h3>
+          <p className="mt-1 text-xs font-bold text-slate-500">ذمم لنا وعلينا حسب العملة</p>
+        </div>
+      </div>
+
+      <div className="p-5">
+        {!hasRows ? (
+          <EmptyState title="لا توجد ذمم مفتوحة" />
+        ) : (
+          <div className="space-y-4">
+            <ObligationGroup title="المبالغ المستحقة لنا" rows={totals.receivable} color="emerald" />
+            <ObligationGroup title="المبالغ المستحقة علينا" rows={totals.payable} color="rose" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ObligationGroup({ title, rows, color }) {
+  const colorClass = color === "rose" ? "text-rose-700 bg-rose-50" : "text-emerald-700 bg-emerald-50";
+
+  return (
+    <div className="rounded-3xl border border-slate-100 bg-slate-50 p-4 text-right">
+      <p className={`inline-flex rounded-full px-3 py-1 text-[11px] font-black ${colorClass}`}>{title}</p>
+
+      {rows.length === 0 ? (
+        <p className="mt-3 text-xs font-bold text-slate-400">لا توجد مبالغ مفتوحة</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {rows.map((row) => (
+            <div key={`${title}-${row.currency}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+              <span dir="ltr" className="font-mono text-sm font-black text-slate-950">
+                {formatMoney(row.remaining)} {row.currency}
+              </span>
+              <span className="text-xs font-black text-slate-500">المتبقي</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -17,7 +17,6 @@ import {
   LogOut,
   ReceiptText,
   PiggyBank,
-  Scale,
 } from "lucide-react";
 import BrandOrbitLogo from "../../shared/BrandOrbitLogo";
 import { useAuth } from "../../context/AuthContext";
@@ -51,8 +50,8 @@ const SECTIONS = [
         ],
       },
       {
-        to: "/transactions",
-        label: "المعاملات",
+        to: "/operations",
+        label: "العمليات",
         icon: ArrowLeftRight,
         permissions: [
           "transaction.viewAny",
@@ -72,8 +71,8 @@ const SECTIONS = [
         ],
       },
       {
-        to: "/add-transaction",
-        label: "إضافة معاملة",
+        to: "/add-operation",
+        label: "إضافة عملية",
         icon: PlusCircle,
         permissions: ["transaction.create", "operation.create"],
       },
@@ -90,7 +89,10 @@ const SECTIONS = [
           "box.create",
           "box.update",
           "box.delete",
-          "box.adjust",
+          "box.adjustBalance",
+          "box.viewLogs",
+          "box.adjustment.view",
+          "box.adjustment.create",
         ],
       },
       {

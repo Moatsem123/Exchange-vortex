@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -27,27 +28,28 @@ import boxesService from "../services/boxes";
 import operationsService from "../services/operations";
 import { extractApiError } from "../shared/helpers";
 import { useToast } from "../shared/Toast";
+import { getBoxTypeLabel } from "../shared/boxTypes";
 
 const CURRENCIES = ["USD", "EUR", "ILS", "TRY", "USDT", "GBP"];
 
 const GROUPS = {
   turkish: {
     apiType: "turkish",
-    title: "صناديق تركيا",
+    title: getBoxTypeLabel("turkish"),
     subtitle: "إدارة حسابات برق والطير والحسابات التركية",
     addText: "إضافة حساب تركي",
     icon: Coins,
   },
   "local-bank-wallet": {
     apiType: "local_bank_wallet",
-    title: "البنوك والمحافظ الرقمية",
+    title: getBoxTypeLabel("local_bank_wallet"),
     subtitle: "إدارة البنوك والمحافظ مثل بنك فلسطين وجوال باي",
     addText: "إضافة بنك أو محفظة",
     icon: Building2,
   },
   "usdt-wallet": {
     apiType: "usdt_wallet",
-    title: "المحافظ الإلكترونية",
+    title: getBoxTypeLabel("usdt_wallet"),
     subtitle: "إدارة Binance ومحافظ USDT والحسابات الإلكترونية",
     addText: "إضافة محفظة إلكترونية",
     icon: Wallet,

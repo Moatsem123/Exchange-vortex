@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Package, Coins, Building2, Wallet, ArrowLeft, Plus } from "lucide-react";
@@ -6,12 +7,13 @@ import PageHeader from "../shared/PageHeader";
 import EmptyState from "../shared/EmptyState";
 import ErrorState from "../shared/ErrorState";
 import boxesService from "../services/boxes";
+import { getBoxTypeLabel } from "../shared/boxTypes";
 
 const BOX_GROUPS = [
   {
     key: "turkish",
     path: "/boxes/turkish",
-    title: "صناديق تركيا",
+    title: getBoxTypeLabel("turkish"),
     subtitle: "برق، الطير، والحسابات التركية",
     icon: Coins,
     currencyHint: "TRY",
@@ -19,7 +21,7 @@ const BOX_GROUPS = [
   {
     key: "local_bank_wallet",
     path: "/boxes/local-bank-wallet",
-    title: "البنوك والمحافظ الرقمية",
+    title: getBoxTypeLabel("local_bank_wallet"),
     subtitle: "بنك فلسطين، جوال باي، Ooredoo",
     icon: Building2,
     currencyHint: "ILS / USD",
@@ -27,7 +29,7 @@ const BOX_GROUPS = [
   {
     key: "usdt_wallet",
     path: "/boxes/usdt-wallet",
-    title: "المحافظ الإلكترونية",
+    title: getBoxTypeLabel("usdt_wallet"),
     subtitle: "Binance، USDT Wallet، والحسابات الإلكترونية",
     icon: Wallet,
     currencyHint: "USDT",

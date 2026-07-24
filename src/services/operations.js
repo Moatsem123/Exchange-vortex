@@ -8,6 +8,12 @@ const operationsService = {
   remove: (id) => api.delete(`/operations/${id}`).then((r) => r.data),
   complete: (id, data = {}) => api.post(`/operations/${id}/complete`, data).then((r) => r.data),
   cancel: (id, data = {}) => api.post(`/operations/${id}/cancel`, data).then((r) => r.data),
+  settleCustomer: (id, data = {}) =>
+    api.post(`/operations/${id}/customer-settlement`, data).then((r) => r.data),
+  fulfillSupplier: (id, data = {}) =>
+    api.post(`/operations/${id}/supplier-fulfillment`, data).then((r) => r.data),
+  settleSupplier: (id, data = {}) =>
+    api.post(`/operations/${id}/supplier-settlement`, data).then((r) => r.data),
   receipt: (id) => api.get(`/operations/${id}/receipt`).then((r) => r.data),
 };
 
