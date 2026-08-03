@@ -1409,8 +1409,9 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
   const settlementObligations = supplierSettlementObligations(operation);
   const fallbackTarget = {
     id: null,
+    obligationId: null,
     type: totals.type,
-    reasonLabel: totals.type === "receivable" ? "مستحق لنا على المورد" : "مستحق للمورد",
+    reasonLabel: totals.type === "receivable" ? "المستحق من المورد" : "المستحق للمورد",
     amount: totals.original,
     settled: totals.settled,
     remaining: totals.remaining,
@@ -1451,7 +1452,9 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
     onSubmit({
       amount: Number(amount),
       box_id: Number(boxId),
-      operation_obligation_id: selectedObligation.id || undefined,
+      operation_obligation_id:
+        selectedObligation.obligationId ??
+        (Number.isFinite(Number(selectedObligation.id)) ? Number(selectedObligation.id) : undefined),
       settlement_date: settlementDate || undefined,
       notes: notes || undefined,
     });
@@ -1462,7 +1465,7 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
       <form onSubmit={handleSubmit} className="space-y-4">
         <ImpactBox
           lines={[
-            `${totals.type === "receivable" ? "المستحق لنا على المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
+            `${totals.type === "receivable" ? "المستحق من المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
             `تمت تسويته: ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي: ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
             `سيتم تسوية: ${selectedObligation.reasonLabel} ${moneyWithCurrency(selectedObligation.remaining, selectedObligation.currency)}.`,
             `${settlementLabel}: ${settlementImpact}`,

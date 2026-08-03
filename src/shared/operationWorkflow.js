@@ -189,7 +189,11 @@ export function getCommissionPayerMeta(payer) {
 }
 
 export function getSupplierDirection(operation) {
-  return operation?.supplier_direction || "unspecified";
+  if (operation?.supplier_direction) return operation.supplier_direction;
+  if (operation?.customer_direction === "intermediary_pays_customer") return "supplier_pays_intermediary";
+  if (operation?.customer_direction === "customer_pays_intermediary") return "intermediary_pays_supplier";
+
+  return "unspecified";
 }
 
 export function getSupplierFulfillmentMeta(status) {
@@ -291,17 +295,19 @@ export function summarizeObligationsByType(operation, type) {
 }
 
 export function supplierSettlementTotals(operation) {
-  const supplierObligations = summarizeObligations(operation).filter((item) => item.role === "supplier");
+  const supplierObligations = supplierSettlementObligations(operation);
   const fallbackAmount = Number(operation?.supplier_amount || 0);
+  const fallbackSupplierCommission = Number(operation?.supplier_commission_amount || 0);
   const fallbackCurrency = operation?.supplier_currency || operation?.customer_currency || "USD";
   const fallbackDirection = getSupplierDirection(operation);
   const fallbackType = fallbackDirection === "supplier_pays_intermediary" ? "receivable" : "payable";
+  const fallbackTotal = fallbackAmount + (fallbackType === "receivable" ? fallbackSupplierCommission : 0);
 
   if (supplierObligations.length === 0) {
     return {
-      original: fallbackAmount,
+      original: fallbackTotal,
       settled: 0,
-      remaining: fallbackAmount,
+      remaining: fallbackTotal,
       currency: fallbackCurrency,
       obligationId: null,
       type: fallbackType,
@@ -323,15 +329,64 @@ export function supplierSettlementTotals(operation) {
 }
 
 export function supplierSettlementObligations(operation) {
-  return summarizeObligations(operation)
+  const obligations = summarizeObligations(operation)
     .filter((item) => item.role === "supplier" && Number(item.remaining || 0) > 0)
     .sort((a, b) => supplierSettlementPriority(a) - supplierSettlementPriority(b) || b.remaining - a.remaining || a.id - b.id);
+
+  if (obligations.length > 0) return obligations;
+
+  return fallbackSupplierSettlementObligations(operation);
 }
 
 function supplierSettlementPriority(obligation) {
   if (obligation.reason === "supplier_principal" || obligation.reason === "supplier_settlement") return 0;
   if (obligation.reason === "commission") return 1;
   return 2;
+}
+
+function fallbackSupplierSettlementObligations(operation) {
+  const supplierAmount = Number(operation?.supplier_amount || 0);
+  const supplierCommission = Number(operation?.supplier_commission_amount || 0);
+  const currency = operation?.supplier_currency || operation?.customer_currency || "USD";
+  const supplierDirection = getSupplierDirection(operation);
+  const type = supplierDirection === "supplier_pays_intermediary" ? "receivable" : "payable";
+  const obligations = [];
+
+  if (supplierAmount > 0) {
+    obligations.push({
+      id: "fallback-supplier-principal",
+      obligationId: null,
+      type,
+      role: "supplier",
+      roleLabel: COUNTERPARTY_ROLE_LABELS.supplier,
+      reason: supplierDirection === "supplier_pays_intermediary" ? "supplier_principal" : "supplier_settlement",
+      reasonLabel: "أصل مبلغ المورد",
+      amount: supplierAmount,
+      settled: 0,
+      remaining: supplierAmount,
+      currency,
+      status: "open",
+    });
+  }
+
+  if (supplierCommission > 0 && type === "receivable") {
+    obligations.push({
+      id: "fallback-supplier-commission",
+      obligationId: null,
+      type: "receivable",
+      role: "supplier",
+      roleLabel: COUNTERPARTY_ROLE_LABELS.supplier,
+      reason: "commission",
+      reasonLabel: "عمولة المورد",
+      amount: supplierCommission,
+      settled: 0,
+      remaining: supplierCommission,
+      currency: operation?.commission_currency || operation?.customer_currency || "USD",
+      status: "open",
+    });
+  }
+
+  return obligations;
 }
 
 export function getWorkflowActionHints(operation) {
