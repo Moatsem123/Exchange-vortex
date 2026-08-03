@@ -23,6 +23,7 @@ import currenciesService from "../services/currencies";
 import boxesService from "../services/boxes";
 import { extractApiError, formatMoney, unwrapList } from "../shared/helpers";
 import { BOX_TYPE_OPTIONS, getBoxTypeLabel } from "../shared/boxTypes";
+import { getSupplierDirectionMeta, SUPPLIER_DIRECTION_OPTIONS } from "../shared/operationWorkflow";
 
 const PAGE_TYPES = [
   {
@@ -36,8 +37,8 @@ const PAGE_TYPES = [
 const FUNDING_TYPES = [
   {
     key: "supplier",
-    label: "مورد",
-    desc: "مصدر الأموال من مورد",
+    label: "عملية مورد",
+    desc: "عملية بين مورد وعميل باتجاه مالي محدد",
     icon: Building2,
   },
   {
@@ -121,6 +122,7 @@ function AddTransactionPage() {
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split("T")[0]);
   const [transactionTime, setTransactionTime] = useState(new Date().toTimeString().slice(0, 5));
   const [operationStatus, setOperationStatus] = useState("pending");
+  const [supplierDirection, setSupplierDirection] = useState("supplier_pays_intermediary");
 
   const [commissionMode, setCommissionMode] = useState("none");
   const [commissionType, setCommissionType] = useState("percentage");
@@ -288,6 +290,7 @@ function AddTransactionPage() {
 
       if (isSupplierFunding) {
         if (!supplierId) validationErrors.supplier = "اختر المورد";
+        if (!supplierDirection) validationErrors.supplier_direction = "اختر اتجاه المورد";
 
         if (!supplierAmount || Number(supplierAmount) <= 0) {
           validationErrors.supplier_amount = "أدخل مبلغ المورد";
@@ -375,6 +378,7 @@ function AddTransactionPage() {
         supplier_currency: null,
         supplier_amount: null,
         supplier_exchange_rate: null,
+        supplier_direction: null,
 
         customer_currency: transferCurrency,
         customer_amount: Number(transferAmount),
@@ -395,6 +399,7 @@ function AddTransactionPage() {
       `FUNDING_SOURCE: ${fundingSource}`,
       `COMMISSION_MODE: subtract_from_customer`,
       `NET_AFTER_COMMISSION: ${computed.final}`,
+      isSupplierFunding && supplierDirection ? `SUPPLIER_DIRECTION: ${supplierDirection}` : null,
       isBoxFunding && boxType ? `BOX_TYPE: ${boxType}` : null,
       isBoxFunding && boxCurrency ? `BOX_CURRENCY: ${boxCurrency}` : null,
       isBoxFunding && boxAmount ? `BOX_AMOUNT: ${boxAmount}` : null,
@@ -415,6 +420,7 @@ function AddTransactionPage() {
       supplier_currency: isSupplierFunding ? supplierCurrency : null,
       supplier_amount: isSupplierFunding ? Number(supplierAmount) : null,
       supplier_exchange_rate: isSupplierFunding ? Number(supplierExchangeRate) : null,
+      supplier_direction: isSupplierFunding ? supplierDirection : null,
 
       customer_currency: customerCurrency,
       customer_amount: Number(customerAmount),
@@ -553,6 +559,7 @@ function AddTransactionPage() {
                               setSupplierId(null);
                               setSupplierSearch("");
                               setSupplierAmount("");
+                              setSupplierDirection("supplier_pays_intermediary");
                               setOperationStatus("completed");
                               setShowSupplierList(false);
                             }
@@ -633,6 +640,12 @@ function AddTransactionPage() {
                           }}
                         />
                       </Field>
+
+                      <div className="md:col-span-2">
+                        <Field label="اتجاه المورد" required error={errors.supplier_direction}>
+                          <SupplierDirectionPicker value={supplierDirection} onChange={setSupplierDirection} />
+                        </Field>
+                      </div>
 
                       <Field label="مبلغ المورد" required error={errors.supplier_amount}>
                         <input
@@ -1130,6 +1143,9 @@ function AddTransactionPage() {
 
                 {isOperation && <SummaryRow label="العميل" value={selectedCustomer?.name || "—"} />}
                 {isOperation && isSupplierFunding && <SummaryRow label="المورد" value={selectedSupplier?.name || "—"} />}
+                {isOperation && isSupplierFunding && (
+                  <SummaryRow label="اتجاه المورد" value={getSupplierDirectionMeta(supplierDirection).label} />
+                )}
 
                 {isOperation && isBoxFunding && (
                   <>
@@ -1239,6 +1255,43 @@ function StatusSelect({ value, onChange }) {
         </option>
       ))}
     </select>
+  );
+}
+
+function SupplierDirectionPicker({ value, onChange }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      {SUPPLIER_DIRECTION_OPTIONS.map((option) => {
+        const active = value === option.value;
+        const meta = getSupplierDirectionMeta(option.value);
+        const Icon = option.value === "supplier_pays_intermediary" ? Building2 : Wallet;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`flex min-h-24 items-center gap-3 rounded-2xl border-2 p-4 text-right transition ${
+              active ? "border-teal-500 bg-teal-50/70" : "border-slate-200 bg-white hover:bg-slate-50"
+            }`}
+          >
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                active ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-slate-900">{option.label}</p>
+              <p className="mt-1 text-[11px] font-bold text-slate-500">{option.description}</p>
+              <p className="mt-1 text-[11px] text-slate-400">{meta.cashImpact}</p>
+            </div>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -39,6 +39,8 @@ import {
   getCustomerSettlementMeta,
   getOperationDirection,
   getOperationStatusMeta,
+  getSupplierDirection,
+  getSupplierDirectionMeta,
   getSupplierFulfillmentMeta,
   getSupplierSettlementMeta,
   moneyWithCurrency,
@@ -57,7 +59,7 @@ const STATUS_META = {
 
 const TYPE_OPTIONS = [
   { value: "", label: "نوع العملية" },
-  { value: "supplier", label: "مصدر الأموال: المورد" },
+  { value: "supplier", label: "عمليات المورد" },
   { value: "box", label: "مصدر الأموال: الصندوق" },
   { value: "transfer", label: "تحويل بين حسابات" },
 ];
@@ -114,7 +116,7 @@ function getOperationType(operation) {
   if (operation?.supplier_id || operation?.supplier) {
     return {
       key: "supplier",
-      label: "مصدر الأموال: المورد",
+      label: "عملية مورد",
       color: "violet",
       icon: Building2,
       bgColor: "bg-violet-50",
@@ -905,6 +907,8 @@ function TransactionRow({
   const statusMeta = getStatusMeta(operation.status);
   const direction = getOperationDirection(operation);
   const directionMeta = getCustomerDirectionMeta(direction);
+  const supplierDirection = getSupplierDirection(operation);
+  const supplierDirectionMeta = getSupplierDirectionMeta(supplierDirection);
   const customerSettlementMeta = getCustomerSettlementMeta(operation.customer_settlement_status, direction);
   const supplierFulfillmentMeta = getSupplierFulfillmentMeta(operation.supplier_fulfillment_status);
   const supplierSettlementMeta = getSupplierSettlementMeta(operation.supplier_settlement_status);
@@ -984,12 +988,12 @@ function TransactionRow({
 
       <td className="px-4 py-3">
         <p className="text-sm font-bold text-slate-900">{operation.supplier ? getSupplierName(operation) : getBoxName(operation)}</p>
-        <p className="text-xs text-slate-500">{operation.supplier ? "مورد" : "صندوق"}</p>
+        <p className="text-xs text-slate-500">{operation.supplier ? supplierDirectionMeta.shortLabel : "صندوق"}</p>
       </td>
 
       <td className="px-4 py-3">
         <Badge color="blue">{directionMeta.shortLabel}</Badge>
-        <p className="mt-1 text-[11px] text-slate-500">{directionMeta.cashImpact}</p>
+        <p className="mt-1 text-[11px] text-slate-500">{hasSupplier ? supplierDirectionMeta.cashImpact : directionMeta.cashImpact}</p>
       </td>
 
       <td className="px-4 py-3">
@@ -1061,6 +1065,8 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
   const statusMeta = data ? getStatusMeta(data.status) : null;
   const direction = data ? getOperationDirection(data) : "customer_pays_intermediary";
   const directionMeta = getCustomerDirectionMeta(direction);
+  const supplierDirection = data ? getSupplierDirection(data) : "unspecified";
+  const supplierDirectionMeta = getSupplierDirectionMeta(supplierDirection);
   const customerSettlementMeta = data ? getCustomerSettlementMeta(data.customer_settlement_status, direction) : null;
   const supplierFulfillmentMeta = data ? getSupplierFulfillmentMeta(data.supplier_fulfillment_status) : null;
   const supplierSettlementMeta = data ? getSupplierSettlementMeta(data.supplier_settlement_status) : null;
@@ -1165,6 +1171,8 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
             <div className="space-y-3">
               <h3 className="text-sm font-black text-slate-900">تنفيذ المورد</h3>
               <InfoRow label="المورد" value={data?.supplier ? getSupplierName(data) : "لا يوجد مورد"} />
+              <InfoRow label="اتجاه المورد" value={data?.supplier ? supplierDirectionMeta.label : "—"} />
+              <InfoRow label="أثر تسوية المورد" value={data?.supplier ? supplierDirectionMeta.cashImpact : "—"} />
               <InfoRow label="المبلغ" value={data?.supplier ? moneyWithCurrency(data?.supplier_amount || 0, data?.supplier_currency || "USD") : "—"} />
               <InfoRow label="سعر الصرف" value={data?.supplier_exchange_rate || "—"} />
               <InfoRow label="الحالة" value={data?.supplier ? supplierFulfillmentMeta?.label : "لا يوجد مورد"} />
@@ -1174,9 +1182,15 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
             <div className="space-y-3">
               <h3 className="text-sm font-black text-slate-900">تسوية المورد</h3>
               <InfoRow label="الحالة" value={data?.supplier ? supplierSettlementMeta?.label : "لا يوجد مورد"} />
-              <InfoRow label="أصل المستحق للمورد" value={data?.supplier ? moneyWithCurrency(supplierTotals?.original || 0, supplierTotals?.currency) : "—"} />
+              <InfoRow
+                label={supplierTotals?.type === "receivable" ? "أصل المستحق لنا على المورد" : "أصل المستحق للمورد"}
+                value={data?.supplier ? moneyWithCurrency(supplierTotals?.original || 0, supplierTotals?.currency) : "—"}
+              />
               <InfoRow label="تمت تسويته" value={data?.supplier ? moneyWithCurrency(supplierTotals?.settled || 0, supplierTotals?.currency) : "—"} />
-              <InfoRow label="المتبقي علينا" value={data?.supplier ? moneyWithCurrency(supplierTotals?.remaining || 0, supplierTotals?.currency) : "—"} />
+              <InfoRow
+                label={supplierTotals?.type === "receivable" ? "المتبقي لنا" : "المتبقي علينا"}
+                value={data?.supplier ? moneyWithCurrency(supplierTotals?.remaining || 0, supplierTotals?.currency) : "—"}
+              />
             </div>
 
             <FinancialPosition receivables={receivables} payables={payables} />
@@ -1364,6 +1378,7 @@ function CustomerSettlementModal({ operation, boxes, loading, onClose, onSubmit 
 
 function SupplierFulfillmentModal({ operation, loading, onClose, onConfirm }) {
   if (!operation) return null;
+  const supplierDirectionMeta = getSupplierDirectionMeta(getSupplierDirection(operation));
 
   return (
     <WorkflowModal title="تسجيل تنفيذ المورد" onClose={onClose}>
@@ -1371,7 +1386,7 @@ function SupplierFulfillmentModal({ operation, loading, onClose, onConfirm }) {
         <ImpactBox
           lines={[
             `سيتم تسجيل أن المورد "${getSupplierName(operation)}" نفذ العملية.`,
-            `سيظهر مستحق علينا للمورد بقيمة ${moneyWithCurrency(operation.supplier_amount, operation.supplier_currency)} حتى تتم التسوية النقدية.`,
+            `${supplierDirectionMeta.fulfillmentMessage} القيمة: ${moneyWithCurrency(operation.supplier_amount, operation.supplier_currency)}.`,
           ]}
         />
 
@@ -1400,6 +1415,11 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
   const matchingBoxes = boxes.filter(
     (box) => String(box.currency || "USD").toUpperCase() === String(totals.currency || "USD").toUpperCase()
   );
+  const settlementLabel = totals.settlementDirection === "cash_in" ? "دخول نقدي" : "خروج نقدي";
+  const settlementImpact =
+    totals.settlementDirection === "cash_in"
+      ? "سيتم إضافة مبلغ التسوية إلى الصندوق المختار."
+      : "سيتم خصم مبلغ التسوية من الصندوق المختار.";
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -1417,9 +1437,9 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
       <form onSubmit={handleSubmit} className="space-y-4">
         <ImpactBox
           lines={[
-            `المستحق للمورد: ${moneyWithCurrency(totals.original, totals.currency)}.`,
+            `${totals.type === "receivable" ? "المستحق لنا على المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
             `تمت تسويته: ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي: ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
-            "سيتم خصم مبلغ التسوية من الصندوق المختار.",
+            `${settlementLabel}: ${settlementImpact}`,
           ]}
         />
 

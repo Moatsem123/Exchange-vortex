@@ -785,6 +785,7 @@ function labelOf(key) {
     supplier_amount: "مبلغ المورد",
     customer_amount: "مبلغ العميل",
     customer_net_amount: "صافي العميل",
+    supplier_direction: "اتجاه المورد",
     customer_direction: "اتجاه العميل",
     customer_settlement_status: "حالة تسوية العميل",
     supplier_fulfillment_status: "حالة تنفيذ المورد",
@@ -873,6 +874,8 @@ function formatStatus(value) {
     settled: "تمت التسوية",
     customer_pays_intermediary: "العميل يرسل أموالاً",
     intermediary_pays_customer: "العميل يستلم أموالاً",
+    supplier_pays_intermediary: "المورد يرسل أموالاً",
+    intermediary_pays_supplier: "نحن ندفع للمورد",
     receivable: "مستحق لنا",
     payable: "مستحق علينا",
     customer: "عميل",
@@ -901,6 +904,7 @@ function formatCell(value, key = "") {
     key === "status" ||
     key.includes("_status") ||
     key === "customer_direction" ||
+    key === "supplier_direction" ||
     key === "obligation_type" ||
     key === "reason" ||
     key === "counterparty_role" ||

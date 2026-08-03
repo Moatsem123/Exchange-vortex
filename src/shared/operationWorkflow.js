@@ -43,6 +43,46 @@ export const CUSTOMER_DIRECTIONS = {
   },
 };
 
+export const SUPPLIER_DIRECTIONS = {
+  unspecified: {
+    label: "غير محدد",
+    shortLabel: "غير محدد",
+    customerDirection: "unspecified",
+    fulfillmentMessage: "سيتم تسجيل تنفيذ المورد حسب اتجاه العملية.",
+    settlementMessage: "سيتم تسجيل تسوية المورد حسب المستحق المفتوح.",
+    cashImpact: "لا يوجد أثر نقدي محدد بعد",
+  },
+  supplier_pays_intermediary: {
+    label: "المورد يرسل أموالاً",
+    shortLabel: "المورد يرسل",
+    customerDirection: "intermediary_pays_customer",
+    fulfillmentMessage: "سيظهر مبلغ مستحق لنا على المورد حتى تتم التسوية النقدية.",
+    settlementMessage: "سيتم إضافة مبلغ التسوية إلى الصندوق المختار.",
+    cashImpact: "يزيد رصيد الصندوق عند تسوية المورد",
+  },
+  intermediary_pays_supplier: {
+    label: "نحن ندفع للمورد",
+    shortLabel: "ندفع للمورد",
+    customerDirection: "customer_pays_intermediary",
+    fulfillmentMessage: "سيظهر مستحق علينا للمورد حتى تتم التسوية النقدية.",
+    settlementMessage: "سيتم خصم مبلغ التسوية من الصندوق المختار.",
+    cashImpact: "ينقص رصيد الصندوق عند تسوية المورد",
+  },
+};
+
+export const SUPPLIER_DIRECTION_OPTIONS = [
+  {
+    value: "supplier_pays_intermediary",
+    label: "المورد يرسل لنا",
+    description: "المورد يدفع أولاً، ثم يستلم العميل من الصندوق",
+  },
+  {
+    value: "intermediary_pays_supplier",
+    label: "نحن ندفع للمورد",
+    description: "العميل يدفع لنا، ثم نسدد المورد من الصندوق",
+  },
+];
+
 export const CUSTOMER_SETTLEMENT_STATUS_META = {
   pending: { label: "لم يتم التسديد", color: "amber" },
   completed: { label: "تم التسديد", color: "emerald" },
@@ -71,6 +111,7 @@ export const COUNTERPARTY_ROLE_LABELS = {
 
 export const OBLIGATION_REASON_LABELS = {
   customer_principal: "أصل مبلغ العميل",
+  supplier_principal: "أصل مبلغ المورد",
   supplier_settlement: "تسوية المورد",
   customer_refund: "استرداد العميل",
   supplier_refund: "استرداد المورد",
@@ -115,6 +156,14 @@ export function getCustomerSettlementMeta(status, direction) {
   };
 }
 
+export function getSupplierDirectionMeta(direction) {
+  return SUPPLIER_DIRECTIONS[direction] || SUPPLIER_DIRECTIONS.unspecified;
+}
+
+export function getSupplierDirection(operation) {
+  return operation?.supplier_direction || "unspecified";
+}
+
 export function getSupplierFulfillmentMeta(status) {
   return SUPPLIER_FULFILLMENT_STATUS_META[status] || SUPPLIER_FULFILLMENT_STATUS_META.pending;
 }
@@ -132,7 +181,9 @@ export function moneyWithCurrency(amount, currency = "USD") {
 }
 
 export function getOperationDirection(operation) {
-  return operation?.customer_direction || "unspecified";
+  if (operation?.customer_direction) return operation.customer_direction;
+
+  return getSupplierDirectionMeta(operation?.supplier_direction).customerDirection || "unspecified";
 }
 
 export function describePendingReasons(operation) {
@@ -215,6 +266,8 @@ export function supplierSettlementTotals(operation) {
   const supplierObligations = summarizeObligations(operation).filter((item) => item.role === "supplier");
   const fallbackAmount = Number(operation?.supplier_amount || 0);
   const fallbackCurrency = operation?.supplier_currency || operation?.customer_currency || "USD";
+  const fallbackDirection = getSupplierDirection(operation);
+  const fallbackType = fallbackDirection === "supplier_pays_intermediary" ? "receivable" : "payable";
 
   if (supplierObligations.length === 0) {
     return {
@@ -223,6 +276,8 @@ export function supplierSettlementTotals(operation) {
       remaining: fallbackAmount,
       currency: fallbackCurrency,
       obligationId: null,
+      type: fallbackType,
+      settlementDirection: fallbackType === "receivable" ? "cash_in" : "cash_out",
     };
   }
 
@@ -234,6 +289,8 @@ export function supplierSettlementTotals(operation) {
     remaining: supplierObligations.reduce((sum, item) => sum + item.remaining, 0),
     currency: first.currency,
     obligationId: first.id,
+    type: first.type,
+    settlementDirection: first.type === "receivable" ? "cash_in" : "cash_out",
   };
 }
 
