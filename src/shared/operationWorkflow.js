@@ -295,7 +295,8 @@ export function summarizeObligationsByType(operation, type) {
 }
 
 export function supplierSettlementTotals(operation) {
-  const supplierObligations = supplierSettlementObligations(operation);
+  const allSupplierObligations = summarizeObligations(operation).filter((item) => item.role === "supplier");
+  const openSupplierObligations = supplierSettlementObligations(operation);
   const fallbackAmount = Number(operation?.supplier_amount || 0);
   const fallbackSupplierCommission = Number(operation?.supplier_commission_amount || 0);
   const fallbackCurrency = operation?.supplier_currency || operation?.customer_currency || "USD";
@@ -303,7 +304,7 @@ export function supplierSettlementTotals(operation) {
   const fallbackType = fallbackDirection === "supplier_pays_intermediary" ? "receivable" : "payable";
   const fallbackTotal = fallbackAmount + (fallbackType === "receivable" ? fallbackSupplierCommission : 0);
 
-  if (supplierObligations.length === 0) {
+  if (allSupplierObligations.length === 0) {
     return {
       original: fallbackTotal,
       settled: 0,
@@ -315,12 +316,12 @@ export function supplierSettlementTotals(operation) {
     };
   }
 
-  const first = supplierSettlementObligations(operation)[0] || supplierObligations[0];
+  const first = openSupplierObligations[0] || allSupplierObligations[0];
 
   return {
-    original: supplierObligations.reduce((sum, item) => sum + item.amount, 0),
-    settled: supplierObligations.reduce((sum, item) => sum + item.settled, 0),
-    remaining: supplierObligations.reduce((sum, item) => sum + item.remaining, 0),
+    original: allSupplierObligations.reduce((sum, item) => sum + item.amount, 0),
+    settled: allSupplierObligations.reduce((sum, item) => sum + item.settled, 0),
+    remaining: allSupplierObligations.reduce((sum, item) => sum + item.remaining, 0),
     currency: first.currency,
     obligationId: first.id,
     type: first.type,
@@ -329,11 +330,13 @@ export function supplierSettlementTotals(operation) {
 }
 
 export function supplierSettlementObligations(operation) {
-  const obligations = summarizeObligations(operation)
-    .filter((item) => item.role === "supplier" && Number(item.remaining || 0) > 0)
+  const supplierObligations = summarizeObligations(operation).filter((item) => item.role === "supplier");
+  const openObligations = supplierObligations
+    .filter((item) => Number(item.remaining || 0) > 0)
     .sort((a, b) => supplierSettlementPriority(a) - supplierSettlementPriority(b) || b.remaining - a.remaining || a.id - b.id);
 
-  if (obligations.length > 0) return obligations;
+  if (openObligations.length > 0) return openObligations;
+  if (supplierObligations.length > 0) return [];
 
   return fallbackSupplierSettlementObligations(operation);
 }

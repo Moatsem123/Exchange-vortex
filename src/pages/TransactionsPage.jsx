@@ -1440,6 +1440,11 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
   const matchingBoxes = boxes.filter(
     (box) => String(box.currency || "USD").toUpperCase() === String(selectedObligation.currency || "USD").toUpperCase()
   );
+  const requestedAmount = Math.max(Number(amount || 0), 0);
+  const appliedAmount = Math.min(requestedAmount, Number(selectedObligation.remaining || 0));
+  const settledAfterPayment = Number(totals.settled || 0) + appliedAmount;
+  const remainingAfterPayment = Math.max(Number(totals.remaining || 0) - appliedAmount, 0);
+  const selectedRemainingAfterPayment = Math.max(Number(selectedObligation.remaining || 0) - appliedAmount, 0);
   const settlementDirection = selectedObligation.type === "receivable" ? "cash_in" : "cash_out";
   const settlementLabel = settlementDirection === "cash_in" ? "دخول نقدي" : "خروج نقدي";
   const settlementImpact =
@@ -1466,8 +1471,10 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
         <ImpactBox
           lines={[
             `${totals.type === "receivable" ? "المستحق من المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
-            `تمت تسويته: ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي: ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
+            `قبل هذه التسوية: تم تسويته ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
             `سيتم تسوية: ${selectedObligation.reasonLabel} ${moneyWithCurrency(selectedObligation.remaining, selectedObligation.currency)}.`,
+            `بعد هذه التسوية: تم تسويته ${moneyWithCurrency(settledAfterPayment, totals.currency)}. المتبقي ${moneyWithCurrency(remainingAfterPayment, totals.currency)}.`,
+            `المتبقي من هذا البند: ${moneyWithCurrency(selectedRemainingAfterPayment, selectedObligation.currency)}.`,
             `${settlementLabel}: ${settlementImpact}`,
           ]}
         />
