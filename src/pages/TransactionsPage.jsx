@@ -1452,10 +1452,23 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
       ? "سيتم إضافة مبلغ التسوية إلى الصندوق المختار."
       : "سيتم خصم مبلغ التسوية من الصندوق المختار.";
 
+  function clampSettlementAmount(value) {
+    if (value === "") return "";
+
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue)) return value;
+
+    const maxAmount = Number(selectedObligation.remaining || 0);
+    const clampedValue = Math.min(Math.max(numericValue, 0), maxAmount);
+
+    return String(clampedValue);
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
     onSubmit({
-      amount: Number(amount),
+      amount: appliedAmount,
       box_id: Number(boxId),
       operation_obligation_id:
         selectedObligation.obligationId ??
@@ -1472,7 +1485,7 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
           lines={[
             `${totals.type === "receivable" ? "المستحق من المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
             `قبل هذه التسوية: تم تسويته ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
-            `سيتم تسوية: ${selectedObligation.reasonLabel} ${moneyWithCurrency(selectedObligation.remaining, selectedObligation.currency)}.`,
+            `سيتم تسوية: ${selectedObligation.reasonLabel} ${moneyWithCurrency(appliedAmount, selectedObligation.currency)} من أصل ${moneyWithCurrency(selectedObligation.remaining, selectedObligation.currency)}.`,
             `بعد هذه التسوية: تم تسويته ${moneyWithCurrency(settledAfterPayment, totals.currency)}. المتبقي ${moneyWithCurrency(remainingAfterPayment, totals.currency)}.`,
             `المتبقي من هذا البند: ${moneyWithCurrency(selectedRemainingAfterPayment, selectedObligation.currency)}.`,
             `${settlementLabel}: ${settlementImpact}`,
@@ -1510,7 +1523,7 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
             min="0.01"
             max={selectedObligation.remaining || undefined}
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => setAmount(clampSettlementAmount(e.target.value))}
             required
             className="ep-input"
           />
