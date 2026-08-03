@@ -47,6 +47,7 @@ import {
   moneyWithCurrency,
   SETTLEMENT_DIRECTION_LABELS,
   summarizeObligationsByType,
+  supplierSettlementObligations,
   supplierSettlementTotals,
 } from "../shared/operationWorkflow";
 
@@ -1405,13 +1406,29 @@ function SupplierFulfillmentModal({ operation, loading, onClose, onConfirm }) {
 
 function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit }) {
   const totals = supplierSettlementTotals(operation);
+  const settlementObligations = supplierSettlementObligations(operation);
+  const fallbackTarget = {
+    id: null,
+    type: totals.type,
+    reasonLabel: totals.type === "receivable" ? "مستحق لنا على المورد" : "مستحق للمورد",
+    amount: totals.original,
+    settled: totals.settled,
+    remaining: totals.remaining,
+    currency: totals.currency,
+  };
   const [amount, setAmount] = useState("");
   const [boxId, setBoxId] = useState("");
+  const [selectedObligationId, setSelectedObligationId] = useState("");
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
+  const selectedObligation =
+    settlementObligations.find((item) => String(item.id) === String(selectedObligationId)) || settlementObligations[0] || fallbackTarget;
 
   useEffect(() => {
-    setAmount(operation ? String(totals.remaining || "") : "");
+    const firstObligation = settlementObligations[0] || fallbackTarget;
+
+    setSelectedObligationId(firstObligation.id ? String(firstObligation.id) : "");
+    setAmount(operation ? String(firstObligation.remaining || "") : "");
     setBoxId("");
     setSettlementDate(new Date().toISOString().split("T")[0]);
     setNotes("");
@@ -1420,11 +1437,12 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
   if (!operation) return null;
 
   const matchingBoxes = boxes.filter(
-    (box) => String(box.currency || "USD").toUpperCase() === String(totals.currency || "USD").toUpperCase()
+    (box) => String(box.currency || "USD").toUpperCase() === String(selectedObligation.currency || "USD").toUpperCase()
   );
-  const settlementLabel = totals.settlementDirection === "cash_in" ? "دخول نقدي" : "خروج نقدي";
+  const settlementDirection = selectedObligation.type === "receivable" ? "cash_in" : "cash_out";
+  const settlementLabel = settlementDirection === "cash_in" ? "دخول نقدي" : "خروج نقدي";
   const settlementImpact =
-    totals.settlementDirection === "cash_in"
+    settlementDirection === "cash_in"
       ? "سيتم إضافة مبلغ التسوية إلى الصندوق المختار."
       : "سيتم خصم مبلغ التسوية من الصندوق المختار.";
 
@@ -1433,7 +1451,7 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
     onSubmit({
       amount: Number(amount),
       box_id: Number(boxId),
-      operation_obligation_id: totals.obligationId || undefined,
+      operation_obligation_id: selectedObligation.id || undefined,
       settlement_date: settlementDate || undefined,
       notes: notes || undefined,
     });
@@ -1446,16 +1464,41 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
           lines={[
             `${totals.type === "receivable" ? "المستحق لنا على المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
             `تمت تسويته: ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي: ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
+            `سيتم تسوية: ${selectedObligation.reasonLabel} ${moneyWithCurrency(selectedObligation.remaining, selectedObligation.currency)}.`,
             `${settlementLabel}: ${settlementImpact}`,
           ]}
         />
+
+        {settlementObligations.length > 1 && (
+          <ModalField label="البند المراد تسويته" required>
+            <select
+              value={selectedObligationId}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                const nextObligation = settlementObligations.find((item) => String(item.id) === String(nextId));
+
+                setSelectedObligationId(nextId);
+                setAmount(nextObligation ? String(nextObligation.remaining || "") : "");
+                setBoxId("");
+              }}
+              required
+              className="ep-input appearance-none"
+            >
+              {settlementObligations.map((obligation) => (
+                <option key={obligation.id} value={obligation.id}>
+                  {obligation.reasonLabel} - {moneyWithCurrency(obligation.remaining, obligation.currency)}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+        )}
 
         <ModalField label="مبلغ التسوية" required>
           <input
             type="number"
             step="0.01"
             min="0.01"
-            max={totals.remaining || undefined}
+            max={selectedObligation.remaining || undefined}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
@@ -1465,7 +1508,7 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
 
         <ModalField label="الصندوق" required>
           <select value={boxId} onChange={(e) => setBoxId(e.target.value)} required className="ep-input appearance-none">
-            <option value="">اختر صندوقاً بعملة {totals.currency || "USD"}</option>
+            <option value="">اختر صندوقاً بعملة {selectedObligation.currency || "USD"}</option>
             {matchingBoxes.map((box) => (
               <option key={box.id} value={box.id}>
                 {box.name} - {box.currency || "USD"} - {formatMoney(box.current_balance || 0)}

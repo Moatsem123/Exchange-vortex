@@ -309,7 +309,7 @@ export function supplierSettlementTotals(operation) {
     };
   }
 
-  const first = supplierObligations[0];
+  const first = supplierSettlementObligations(operation)[0] || supplierObligations[0];
 
   return {
     original: supplierObligations.reduce((sum, item) => sum + item.amount, 0),
@@ -320,6 +320,18 @@ export function supplierSettlementTotals(operation) {
     type: first.type,
     settlementDirection: first.type === "receivable" ? "cash_in" : "cash_out",
   };
+}
+
+export function supplierSettlementObligations(operation) {
+  return summarizeObligations(operation)
+    .filter((item) => item.role === "supplier" && Number(item.remaining || 0) > 0)
+    .sort((a, b) => supplierSettlementPriority(a) - supplierSettlementPriority(b) || b.remaining - a.remaining || a.id - b.id);
+}
+
+function supplierSettlementPriority(obligation) {
+  if (obligation.reason === "supplier_principal" || obligation.reason === "supplier_settlement") return 0;
+  if (obligation.reason === "commission") return 1;
+  return 2;
 }
 
 export function getWorkflowActionHints(operation) {
