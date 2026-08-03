@@ -341,7 +341,9 @@ function normalizeOperationRow(operation) {
   const supplierAmount = getSupplierAmount(operation);
   const customerAmount = getCustomerAmount(operation);
   const commission = getCommissionAmount(operation);
-  const customerNet = toNumber(operation?.customer_net_amount ?? customerAmount - commission);
+  const customerCommission = toNumber(operation?.customer_commission_amount ?? commission);
+  const supplierCommission = toNumber(operation?.supplier_commission_amount ?? 0);
+  const customerNet = toNumber(operation?.customer_net_amount ?? customerAmount - customerCommission);
 
   return {
     id: operation?.id,
@@ -357,6 +359,9 @@ function normalizeOperationRow(operation) {
     customer_net_amount: customerNet,
     commission,
     commission_amount: commission,
+    commission_payer: operation?.commission_payer || "customer",
+    customer_commission_amount: customerCommission,
+    supplier_commission_amount: supplierCommission,
     commission_type: operation?.commission_type || "—",
     commission_rate: operation?.commission_rate ?? "—",
     created_at: operation?.created_at,
@@ -796,6 +801,9 @@ function labelOf(key) {
 
     commission: "العمولة",
     commission_amount: "العمولة",
+    commission_payer: "طرف دفع العمولة",
+    customer_commission_amount: "عمولة العميل",
+    supplier_commission_amount: "عمولة المورد",
     total_commission: "إجمالي العمولات",
     total_commissions: "إجمالي العمولات",
     completed_commission: "عمولات مكتملة",
@@ -880,6 +888,7 @@ function formatStatus(value) {
     payable: "مستحق علينا",
     customer: "عميل",
     supplier: "مورد",
+    both: "الطرفان",
     box: "صندوق",
     turkish: getBoxTypeLabel("turkish"),
     local_bank_wallet: getBoxTypeLabel("local_bank_wallet"),
@@ -905,6 +914,7 @@ function formatCell(value, key = "") {
     key.includes("_status") ||
     key === "customer_direction" ||
     key === "supplier_direction" ||
+    key === "commission_payer" ||
     key === "obligation_type" ||
     key === "reason" ||
     key === "counterparty_role" ||
@@ -999,6 +1009,9 @@ function getColumns(rows = []) {
     "customer_net_amount",
     "commission",
     "commission_amount",
+    "commission_payer",
+    "customer_commission_amount",
+    "supplier_commission_amount",
     "commission_type",
     "commission_rate",
     "operation_count",

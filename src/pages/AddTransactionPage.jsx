@@ -23,7 +23,12 @@ import currenciesService from "../services/currencies";
 import boxesService from "../services/boxes";
 import { extractApiError, formatMoney, unwrapList } from "../shared/helpers";
 import { BOX_TYPE_OPTIONS, getBoxTypeLabel } from "../shared/boxTypes";
-import { getSupplierDirectionMeta, SUPPLIER_DIRECTION_OPTIONS } from "../shared/operationWorkflow";
+import {
+  COMMISSION_PAYER_OPTIONS,
+  getCommissionPayerMeta,
+  getSupplierDirectionMeta,
+  SUPPLIER_DIRECTION_OPTIONS,
+} from "../shared/operationWorkflow";
 
 const PAGE_TYPES = [
   {
@@ -127,6 +132,9 @@ function AddTransactionPage() {
   const [commissionMode, setCommissionMode] = useState("none");
   const [commissionType, setCommissionType] = useState("percentage");
   const [commissionValue, setCommissionValue] = useState("");
+  const [commissionPayer, setCommissionPayer] = useState("customer");
+  const [customerCommissionAmount, setCustomerCommissionAmount] = useState("");
+  const [supplierCommissionAmount, setSupplierCommissionAmount] = useState("");
 
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
@@ -239,6 +247,7 @@ function AddTransactionPage() {
   const activeAmount = isTransfer ? transferAmount : customerAmount;
   const activeCurrency = isTransfer ? transferCurrency : customerCurrency;
   const activeExchangeRate = isTransfer ? transferExchangeRate : customerExchangeRate;
+  const effectiveCommissionPayer = commissionMode === "none" || !isSupplierFunding ? "customer" : commissionPayer;
 
   const sourceAmount = useMemo(() => {
     if (isTransfer) return transferAmount;
@@ -261,18 +270,51 @@ function AddTransactionPage() {
           : parsedCommission;
     }
 
-    const final = Math.max(parsedAmount - commissionAmount, 0);
+    const customerCommission =
+      commissionMode !== "apply"
+        ? 0
+        : effectiveCommissionPayer === "supplier"
+          ? 0
+          : effectiveCommissionPayer === "both"
+            ? numberValue(customerCommissionAmount)
+            : commissionAmount;
+    const supplierCommission =
+      commissionMode !== "apply"
+        ? 0
+        : effectiveCommissionPayer === "supplier"
+          ? commissionAmount
+          : effectiveCommissionPayer === "both"
+            ? numberValue(supplierCommissionAmount)
+            : 0;
+    const final = Math.max(parsedAmount - customerCommission, 0);
     const usd = final / parsedRate;
 
     return {
       baseAmount: parsedAmount,
       sourceAmount: numberValue(sourceAmount),
       commissionAmount,
+      customerCommissionAmount: customerCommission,
+      supplierCommissionAmount: supplierCommission,
       final,
       usd,
       rate: parsedRate,
     };
-  }, [activeAmount, activeExchangeRate, commissionMode, commissionType, commissionValue, sourceAmount]);
+  }, [
+    activeAmount,
+    activeExchangeRate,
+    commissionMode,
+    effectiveCommissionPayer,
+    commissionType,
+    commissionValue,
+    customerCommissionAmount,
+    sourceAmount,
+    supplierCommissionAmount,
+  ]);
+
+  const availableCommissionPayers = useMemo(
+    () => COMMISSION_PAYER_OPTIONS.filter((option) => option.value === "customer" || isSupplierFunding),
+    [isSupplierFunding]
+  );
 
   function validate() {
     const validationErrors = {};
@@ -339,7 +381,27 @@ function AddTransactionPage() {
         validationErrors.commission = "أدخل قيمة العمولة";
       }
 
-      if (Number(commissionValue) > 0 && computed.final <= 0) {
+      if (effectiveCommissionPayer !== "customer" && !isSupplierFunding) {
+        validationErrors.commission_payer = "عمولة المورد تحتاج عملية مورد";
+      }
+
+      if (effectiveCommissionPayer === "both") {
+        if (!customerCommissionAmount || Number(customerCommissionAmount) < 0) {
+          validationErrors.customer_commission_amount = "أدخل عمولة العميل";
+        }
+
+        if (!supplierCommissionAmount || Number(supplierCommissionAmount) < 0) {
+          validationErrors.supplier_commission_amount = "أدخل عمولة المورد";
+        }
+
+        const splitTotal = Number(customerCommissionAmount || 0) + Number(supplierCommissionAmount || 0);
+
+        if (Math.abs(splitTotal - computed.commissionAmount) > 0.00009) {
+          validationErrors.commission_split = "مجموع عمولة الطرفين يجب أن يساوي إجمالي العمولة";
+        }
+      }
+
+      if (Number(commissionValue) > 0 && computed.customerCommissionAmount > 0 && computed.final <= 0) {
         validationErrors.commission = "العمولة لا يمكن أن تكون أكبر أو تساوي مبلغ العميل";
       }
     }
@@ -357,7 +419,7 @@ function AddTransactionPage() {
         referenceNumber ? `REF: ${referenceNumber}` : null,
         transactionTime ? `TIME: ${transactionTime}` : null,
         `TYPE: transfer`,
-        `COMMISSION_MODE: subtract_from_customer`,
+        `COMMISSION_MODE: ${commissionMode === "none" ? "none" : effectiveCommissionPayer}`,
         `NET_AFTER_COMMISSION: ${computed.final}`,
         boxType ? `FROM_BOX_TYPE: ${boxType}` : null,
         toBoxType ? `TO_BOX_TYPE: ${toBoxType}` : null,
@@ -386,6 +448,9 @@ function AddTransactionPage() {
 
         commission_type: commissionType,
         commission_rate: commissionNumber,
+        commission_payer: "customer",
+        customer_commission_amount: computed.commissionAmount,
+        supplier_commission_amount: 0,
 
         notes: mergedNotes || null,
       };
@@ -397,8 +462,10 @@ function AddTransactionPage() {
       transactionTime ? `TIME: ${transactionTime}` : null,
       `TYPE: operation`,
       `FUNDING_SOURCE: ${fundingSource}`,
-      `COMMISSION_MODE: subtract_from_customer`,
+      `COMMISSION_MODE: ${commissionMode === "none" ? "none" : effectiveCommissionPayer}`,
       `NET_AFTER_COMMISSION: ${computed.final}`,
+      commissionMode === "apply" ? `CUSTOMER_COMMISSION: ${computed.customerCommissionAmount}` : null,
+      commissionMode === "apply" ? `SUPPLIER_COMMISSION: ${computed.supplierCommissionAmount}` : null,
       isSupplierFunding && supplierDirection ? `SUPPLIER_DIRECTION: ${supplierDirection}` : null,
       isBoxFunding && boxType ? `BOX_TYPE: ${boxType}` : null,
       isBoxFunding && boxCurrency ? `BOX_CURRENCY: ${boxCurrency}` : null,
@@ -428,6 +495,9 @@ function AddTransactionPage() {
 
       commission_type: commissionMode === "none" ? "fixed" : commissionType,
       commission_rate: commissionNumber,
+      commission_payer: commissionMode === "none" ? "customer" : effectiveCommissionPayer,
+      customer_commission_amount: computed.customerCommissionAmount,
+      supplier_commission_amount: computed.supplierCommissionAmount,
 
       notes: mergedNotes || null,
     };
@@ -1061,6 +1131,9 @@ function AddTransactionPage() {
 
                         if (mode.key === "none") {
                           setCommissionValue("");
+                          setCommissionPayer("customer");
+                          setCustomerCommissionAmount("");
+                          setSupplierCommissionAmount("");
                         }
                       }}
                       className={`flex items-center justify-center gap-2 rounded-xl border-2 p-3 text-sm font-bold transition ${
@@ -1104,6 +1177,71 @@ function AddTransactionPage() {
                       className="ep-input"
                     />
                   </Field>
+
+                  <div className="md:col-span-2">
+                    <Field label="طرف دفع العمولة" error={errors.commission_payer || errors.commission_split}>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {availableCommissionPayers.map((option) => {
+                          const active = effectiveCommissionPayer === option.value;
+                          const Icon = option.value === "customer" ? UserIcon : option.value === "supplier" ? Building2 : Percent;
+
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setCommissionPayer(option.value);
+
+                                if (option.value !== "both") {
+                                  setCustomerCommissionAmount("");
+                                  setSupplierCommissionAmount("");
+                                }
+                              }}
+                              className={`flex min-h-20 flex-col items-end justify-center gap-1 rounded-xl border-2 px-3 py-2 text-right transition ${
+                                active
+                                  ? "border-teal-500 bg-teal-50/50 text-teal-700"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 text-sm font-black">
+                                <Icon className="h-4 w-4" />
+                                {option.label}
+                              </span>
+                              <span className="text-xs font-bold leading-5 text-slate-500">{option.description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                  </div>
+
+                  {effectiveCommissionPayer === "both" && (
+                    <>
+                      <Field label={`عمولة العميل ${activeCurrency}`} error={errors.customer_commission_amount}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={customerCommissionAmount}
+                          onChange={(e) => setCustomerCommissionAmount(e.target.value)}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+
+                      <Field label={`عمولة المورد ${activeCurrency}`} error={errors.supplier_commission_amount}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={supplierCommissionAmount}
+                          onChange={(e) => setSupplierCommissionAmount(e.target.value)}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="ep-input"
+                        />
+                      </Field>
+                    </>
+                  )}
                 </motion.div>
               )}
             </Section>
@@ -1190,21 +1328,36 @@ function AddTransactionPage() {
                 />
 
                 {commissionMode === "apply" && computed.commissionAmount > 0 && (
-                  <SummaryRow
-                    label="العمولة"
-                    value={
-                      commissionType === "percentage"
-                        ? `${formatMoney(numberValue(commissionValue))}% = ${formatMoney(computed.commissionAmount)} ${activeCurrency}`
-                        : `${formatMoney(computed.commissionAmount)} ${activeCurrency}`
-                    }
-                    mono
-                  />
+                  <>
+                    <SummaryRow
+                      label="العمولة"
+                      value={
+                        commissionType === "percentage"
+                          ? `${formatMoney(numberValue(commissionValue))}% = ${formatMoney(computed.commissionAmount)} ${activeCurrency}`
+                          : `${formatMoney(computed.commissionAmount)} ${activeCurrency}`
+                      }
+                      mono
+                    />
+                    <SummaryRow label="طرف العمولة" value={getCommissionPayerMeta(effectiveCommissionPayer).label} />
+                    <SummaryRow
+                      label="عمولة العميل"
+                      value={`${formatMoney(computed.customerCommissionAmount)} ${activeCurrency}`}
+                      mono
+                    />
+                    {isSupplierFunding && (
+                      <SummaryRow
+                        label="عمولة المورد"
+                        value={`${formatMoney(computed.supplierCommissionAmount)} ${activeCurrency}`}
+                        mono
+                      />
+                    )}
+                  </>
                 )}
 
                 <div className="my-3 h-px bg-slate-200" />
 
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-right text-[11px] font-bold text-slate-500">الصافي بعد خصم العمولة</p>
+                  <p className="text-right text-[11px] font-bold text-slate-500">صافي العميل بعد حصته من العمولة</p>
 
                   <p dir="ltr" className="mt-1 text-right font-mono text-2xl font-black tabular-nums text-slate-900">
                     {formatMoney(computed.final)} <span className="text-sm text-slate-500">{activeCurrency}</span>

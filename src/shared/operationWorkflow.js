@@ -83,6 +83,30 @@ export const SUPPLIER_DIRECTION_OPTIONS = [
   },
 ];
 
+export const COMMISSION_PAYER_OPTIONS = [
+  {
+    value: "customer",
+    label: "العميل",
+    description: "تُخصم العمولة من صافي العميل",
+  },
+  {
+    value: "supplier",
+    label: "المورد",
+    description: "تُسجل العمولة كمستحق لنا على المورد",
+  },
+  {
+    value: "both",
+    label: "الطرفان",
+    description: "تُوزع العمولة بين العميل والمورد",
+  },
+];
+
+export const COMMISSION_PAYER_LABELS = {
+  customer: "العميل",
+  supplier: "المورد",
+  both: "الطرفان",
+};
+
 export const CUSTOMER_SETTLEMENT_STATUS_META = {
   pending: { label: "لم يتم التسديد", color: "amber" },
   completed: { label: "تم التسديد", color: "emerald" },
@@ -158,6 +182,10 @@ export function getCustomerSettlementMeta(status, direction) {
 
 export function getSupplierDirectionMeta(direction) {
   return SUPPLIER_DIRECTIONS[direction] || SUPPLIER_DIRECTIONS.unspecified;
+}
+
+export function getCommissionPayerMeta(payer) {
+  return COMMISSION_PAYER_OPTIONS.find((option) => option.value === payer) || COMMISSION_PAYER_OPTIONS[0];
 }
 
 export function getSupplierDirection(operation) {

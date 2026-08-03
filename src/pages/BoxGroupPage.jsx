@@ -1063,7 +1063,8 @@ function BoxGroupPage() {
                 {operations.map((op) => {
                   const amount = Number(op.customer_amount || op.amount || 0);
                   const commission = Number(op.commission_amount || op.commission_rate || 0);
-                  const net = amount - commission;
+                  const customerCommission = Number(op.customer_commission_amount ?? commission);
+                  const net = Number(op.customer_net_amount ?? amount - customerCommission);
 
                   return (
                     <tr key={op.id}>

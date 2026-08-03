@@ -35,6 +35,7 @@ import boxesService from "../services/boxes";
 import { extractApiError, formatCompactNumber, formatDate, formatMoney, unwrapList } from "../shared/helpers";
 import {
   describePendingReasons,
+  getCommissionPayerMeta,
   getCustomerDirectionMeta,
   getCustomerSettlementMeta,
   getOperationDirection,
@@ -1012,7 +1013,9 @@ function TransactionRow({
 
       <td className="px-4 py-3">
         <p className="text-sm font-black text-slate-900" dir="ltr">{formatMoney(operation.commission_amount || 0)}</p>
-        <p className="text-xs text-slate-500">{operation.commission_type === "percentage" ? "نسبة" : "ثابت"}</p>
+        <p className="text-xs text-slate-500">
+          {operation.commission_type === "percentage" ? "نسبة" : "ثابت"} · {getCommissionPayerMeta(operation.commission_payer).label}
+        </p>
       </td>
 
       <td className="px-4 py-3">
@@ -1074,6 +1077,7 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
   const receivables = data ? summarizeObligationsByType(data, "receivable") : [];
   const payables = data ? summarizeObligationsByType(data, "payable") : [];
   const supplierTotals = data ? supplierSettlementTotals(data) : null;
+  const commissionPayerMeta = data ? getCommissionPayerMeta(data.commission_payer) : null;
   const Icon = meta?.icon;
 
   return (
@@ -1155,6 +1159,9 @@ function TransactionDetailsPanel({ data, loading, onClose }) {
               <InfoRow label="المورد" value={data?.supplier ? getSupplierName(data) : "لا يوجد مورد"} />
               <InfoRow label="العمولة" value={moneyWithCurrency(data?.commission_amount || 0, data?.commission_currency || "USD")} />
               <InfoRow label="نوع العمولة" value={data?.commission_type === "percentage" ? "نسبة" : "ثابت"} />
+              <InfoRow label="طرف دفع العمولة" value={commissionPayerMeta?.label || "العميل"} />
+              <InfoRow label="حصة العميل من العمولة" value={moneyWithCurrency(data?.customer_commission_amount || 0, data?.commission_currency || data?.customer_currency || "USD")} />
+              <InfoRow label="حصة المورد من العمولة" value={moneyWithCurrency(data?.supplier_commission_amount || 0, data?.commission_currency || data?.customer_currency || "USD")} />
               <InfoRow label="الملاحظات" value={data?.notes || "—"} />
             </div>
 
