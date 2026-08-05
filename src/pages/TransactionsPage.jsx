@@ -515,12 +515,33 @@ function TransactionsPage() {
     setBusy(true);
 
     try {
-      await operationsService.settleSupplier(supplierSettlementAction.id, payload);
+      const res = await operationsService.settleSupplier(supplierSettlementAction.id, payload);
+      await operationsService
+        .show(supplierSettlementAction.id)
+        .then((response) => unwrapPayload(response))
+        .catch(() => unwrapPayload(res));
+
       toast.success("تم تسجيل تسوية المورد");
       setSupplierSettlementAction(null);
       await refreshAll();
     } catch (err) {
       toast.error(extractApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOpenSupplierSettlement(operation) {
+    if (!operation?.id) return;
+
+    setBusy(true);
+
+    try {
+      const res = await operationsService.show(operation.id);
+      setSupplierSettlementAction(unwrapPayload(res));
+    } catch (err) {
+      toast.error(extractApiError(err));
+      setSupplierSettlementAction(operation);
     } finally {
       setBusy(false);
     }
@@ -708,7 +729,7 @@ function TransactionsPage() {
                         onCancel={() => setConfirmCancel(operation)}
                         onSettleCustomer={() => setCustomerSettlementAction(operation)}
                         onFulfillSupplier={() => setSupplierFulfillmentAction(operation)}
-                        onSettleSupplier={() => setSupplierSettlementAction(operation)}
+                        onSettleSupplier={() => handleOpenSupplierSettlement(operation)}
                       />
                     ))}
                   </tbody>
@@ -929,6 +950,11 @@ function TransactionRow({
     isPending &&
     operation.customer_settlement_status === "completed" &&
     (!hasSupplier || operation.supplier_fulfillment_status === "completed");
+  const hasStartedFinancialActivity =
+    !!operation.customer_settlement_status ||
+    !!operation.supplier_fulfillment_status ||
+    !!operation.supplier_settlement_status;
+  const canDeleteOperation = canDelete && !hasStartedFinancialActivity;
 
   return (
     <tr className="border-b border-slate-100 text-right transition hover:bg-slate-50/50">
@@ -970,7 +996,7 @@ function TransactionRow({
             </button>
           )}
 
-          {canDelete && (
+          {canDeleteOperation && (
             <button type="button" onClick={onDelete} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100 disabled:opacity-50" title="حذف">
               <Trash2 className="h-4 w-4" />
             </button>
@@ -1406,7 +1432,6 @@ function SupplierFulfillmentModal({ operation, loading, onClose, onConfirm }) {
 
 function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit }) {
   const totals = supplierSettlementTotals(operation);
-  const settlementObligations = supplierSettlementObligations(operation);
   const fallbackTarget = {
     id: null,
     obligationId: null,
@@ -1419,33 +1444,31 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
   };
   const [amount, setAmount] = useState("");
   const [boxId, setBoxId] = useState("");
-  const [selectedObligationId, setSelectedObligationId] = useState("");
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
-  const selectedObligation =
-    settlementObligations.find((item) => String(item.id) === String(selectedObligationId)) || settlementObligations[0] || fallbackTarget;
+  const settlementResetKey = [
+    operation?.id || "",
+    totals.settled,
+    totals.remaining,
+  ].join("::");
 
   useEffect(() => {
-    const firstObligation = settlementObligations[0] || fallbackTarget;
-
-    setSelectedObligationId(firstObligation.id ? String(firstObligation.id) : "");
-    setAmount(operation ? String(firstObligation.remaining || "") : "");
+    setAmount(operation ? String(totals.remaining || "") : "");
     setBoxId("");
     setSettlementDate(new Date().toISOString().split("T")[0]);
     setNotes("");
-  }, [operation?.id]);
+  }, [settlementResetKey]);
 
   if (!operation) return null;
 
   const matchingBoxes = boxes.filter(
-    (box) => String(box.currency || "USD").toUpperCase() === String(selectedObligation.currency || "USD").toUpperCase()
+    (box) => String(box.currency || "USD").toUpperCase() === String(totals.currency || "USD").toUpperCase()
   );
   const requestedAmount = Math.max(Number(amount || 0), 0);
-  const appliedAmount = Math.min(requestedAmount, Number(selectedObligation.remaining || 0));
+  const appliedAmount = Math.min(requestedAmount, Number(totals.remaining || 0));
   const settledAfterPayment = Number(totals.settled || 0) + appliedAmount;
   const remainingAfterPayment = Math.max(Number(totals.remaining || 0) - appliedAmount, 0);
-  const selectedRemainingAfterPayment = Math.max(Number(selectedObligation.remaining || 0) - appliedAmount, 0);
-  const settlementDirection = selectedObligation.type === "receivable" ? "cash_in" : "cash_out";
+  const settlementDirection = totals.type === "receivable" ? "cash_in" : "cash_out";
   const settlementLabel = settlementDirection === "cash_in" ? "دخول نقدي" : "خروج نقدي";
   const settlementImpact =
     settlementDirection === "cash_in"
@@ -1459,7 +1482,7 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
 
     if (!Number.isFinite(numericValue)) return value;
 
-    const maxAmount = Number(selectedObligation.remaining || 0);
+    const maxAmount = Number(totals.remaining || 0);
     const clampedValue = Math.min(Math.max(numericValue, 0), maxAmount);
 
     return String(clampedValue);
@@ -1470,68 +1493,51 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
     onSubmit({
       amount: appliedAmount,
       box_id: Number(boxId),
-      operation_obligation_id:
-        selectedObligation.obligationId ??
-        (Number.isFinite(Number(selectedObligation.id)) ? Number(selectedObligation.id) : undefined),
       settlement_date: settlementDate || undefined,
       notes: notes || undefined,
     });
   }
 
   return (
-    <WorkflowModal title="تسجيل تسوية المورد" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <ImpactBox
-          lines={[
-            `${totals.type === "receivable" ? "المستحق من المورد" : "المستحق للمورد"}: ${moneyWithCurrency(totals.original, totals.currency)}.`,
-            `قبل هذه التسوية: تم تسويته ${moneyWithCurrency(totals.settled, totals.currency)}. المتبقي ${moneyWithCurrency(totals.remaining, totals.currency)}.`,
-            `سيتم تسوية: ${selectedObligation.reasonLabel} ${moneyWithCurrency(appliedAmount, selectedObligation.currency)} من أصل ${moneyWithCurrency(selectedObligation.remaining, selectedObligation.currency)}.`,
-            `بعد هذه التسوية: تم تسويته ${moneyWithCurrency(settledAfterPayment, totals.currency)}. المتبقي ${moneyWithCurrency(remainingAfterPayment, totals.currency)}.`,
-            `المتبقي من هذا البند: ${moneyWithCurrency(selectedRemainingAfterPayment, selectedObligation.currency)}.`,
-            `${settlementLabel}: ${settlementImpact}`,
-          ]}
+    <WorkflowModal title="تسجيل تسوية المورد" onClose={onClose} compact>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <SettlementImpactSummary
+          title={totals.type === "receivable" ? "المستحق من المورد" : "المستحق للمورد"}
+          total={totals.original}
+          remainingBefore={totals.remaining}
+          paymentAmount={appliedAmount}
+          settledAfter={settledAfterPayment}
+          remainingAfter={remainingAfterPayment}
+          currency={totals.currency}
+          selectedLabel={fallbackTarget.reasonLabel}
+          selectedRemaining={totals.remaining}
+          selectedCurrency={totals.currency}
+          settlementLabel={settlementLabel}
+          settlementImpact={settlementImpact}
         />
 
-        {settlementObligations.length > 1 && (
-          <ModalField label="البند المراد تسويته" required>
-            <select
-              value={selectedObligationId}
-              onChange={(e) => {
-                const nextId = e.target.value;
-                const nextObligation = settlementObligations.find((item) => String(item.id) === String(nextId));
-
-                setSelectedObligationId(nextId);
-                setAmount(nextObligation ? String(nextObligation.remaining || "") : "");
-                setBoxId("");
-              }}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ModalField label="مبلغ التسوية" required>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={totals.remaining || undefined}
+              value={amount}
+              onChange={(e) => setAmount(clampSettlementAmount(e.target.value))}
               required
-              className="ep-input appearance-none"
-            >
-              {settlementObligations.map((obligation) => (
-                <option key={obligation.id} value={obligation.id}>
-                  {obligation.reasonLabel} - {moneyWithCurrency(obligation.remaining, obligation.currency)}
-                </option>
-              ))}
-            </select>
+              className="ep-input h-10"
+            />
           </ModalField>
-        )}
 
-        <ModalField label="مبلغ التسوية" required>
-          <input
-            type="number"
-            step="0.01"
-            min="0.01"
-            max={selectedObligation.remaining || undefined}
-            value={amount}
-            onChange={(e) => setAmount(clampSettlementAmount(e.target.value))}
-            required
-            className="ep-input"
-          />
-        </ModalField>
+          <ModalField label="تاريخ التسوية">
+            <input type="date" value={settlementDate} onChange={(e) => setSettlementDate(e.target.value)} className="ep-input h-10" />
+          </ModalField>
+        </div>
 
         <ModalField label="الصندوق" required>
-          <select value={boxId} onChange={(e) => setBoxId(e.target.value)} required className="ep-input appearance-none">
-            <option value="">اختر صندوقاً بعملة {selectedObligation.currency || "USD"}</option>
+          <select value={boxId} onChange={(e) => setBoxId(e.target.value)} required className="ep-input h-10 appearance-none">
+            <option value="">اختر صندوقاً بعملة {totals.currency || "USD"}</option>
             {matchingBoxes.map((box) => (
               <option key={box.id} value={box.id}>
                 {box.name} - {box.currency || "USD"} - {formatMoney(box.current_balance || 0)}
@@ -1540,40 +1546,36 @@ function SupplierSettlementModal({ operation, boxes, loading, onClose, onSubmit 
           </select>
         </ModalField>
 
-        <ModalField label="تاريخ التسوية">
-          <input type="date" value={settlementDate} onChange={(e) => setSettlementDate(e.target.value)} className="ep-input" />
-        </ModalField>
-
         <ModalField label="ملاحظات">
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="ep-input resize-none py-3" />
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="ep-input resize-none py-2" />
         </ModalField>
 
-        <ModalActions loading={loading} onClose={onClose} confirmText="تسجيل التسوية" />
+        <ModalActions loading={loading} onClose={onClose} confirmText="تسجيل التسوية" compact />
       </form>
     </WorkflowModal>
   );
 }
 
-function WorkflowModal({ title, onClose, children }) {
+function WorkflowModal({ title, onClose, children, compact = false }) {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[180] flex items-center justify-center overflow-y-auto bg-slate-950/45 p-3 backdrop-blur-sm"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onMouseDown={onClose}
       >
         <motion.div
-          className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+          className={`my-auto w-full max-w-lg rounded-3xl border border-slate-200 bg-white shadow-2xl ${compact ? "p-4" : "p-6"}`}
           initial={{ opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.96 }}
           onMouseDown={(e) => e.stopPropagation()}
           dir="rtl"
         >
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+          <div className={`flex items-center justify-between gap-3 ${compact ? "mb-3" : "mb-5"}`}>
+            <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
               <X className="h-4 w-4" />
             </button>
 
@@ -1587,15 +1589,70 @@ function WorkflowModal({ title, onClose, children }) {
   );
 }
 
-function ImpactBox({ lines }) {
+function ImpactBox({ lines, compact = false }) {
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-right">
-      <p className="mb-2 text-xs font-black text-amber-900">الأثر المالي</p>
-      <div className="space-y-1.5">
+    <div className={`rounded-2xl border border-amber-200 bg-amber-50 text-right ${compact ? "p-3" : "p-4"}`}>
+      <p className={`${compact ? "mb-1" : "mb-2"} text-xs font-black text-amber-900`}>الأثر المالي</p>
+      <div className={compact ? "space-y-1" : "space-y-1.5"}>
         {lines.map((line) => (
-          <p key={line} className="text-xs font-bold text-amber-800">{line}</p>
+          <p key={line} className={`${compact ? "text-[11px] leading-5" : "text-xs"} font-bold text-amber-800`}>{line}</p>
         ))}
       </div>
+    </div>
+  );
+}
+
+function SettlementImpactSummary({
+  title,
+  total,
+  remainingBefore,
+  paymentAmount,
+  settledAfter,
+  remainingAfter,
+  currency,
+  selectedLabel,
+  selectedRemaining,
+  selectedCurrency,
+  settlementLabel,
+  settlementImpact,
+}) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-right">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-amber-800">
+          {settlementLabel}
+        </span>
+        <p className="text-xs font-black text-amber-950">الأثر المالي</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <ImpactMetric label={title} value={moneyWithCurrency(total, currency)} />
+        <ImpactMetric label="المتبقي الآن" value={moneyWithCurrency(remainingBefore, currency)} />
+        <ImpactMetric label="هذه التسوية" value={moneyWithCurrency(paymentAmount, currency)} />
+        <ImpactMetric label="المتبقي بعدها" value={moneyWithCurrency(remainingAfter, currency)} strong />
+      </div>
+
+      <div className="mt-2 rounded-xl bg-white/70 px-3 py-2">
+        <p className="text-[11px] font-bold leading-5 text-amber-900">
+          {selectedLabel}: {moneyWithCurrency(paymentAmount, selectedCurrency)} من أصل {moneyWithCurrency(selectedRemaining, selectedCurrency)}
+        </p>
+        <p className="mt-0.5 text-[11px] font-bold leading-5 text-amber-700">{settlementImpact}</p>
+      </div>
+
+      <p className="mt-2 text-[11px] font-bold text-amber-800">
+        تم تسويته بعد العملية: {moneyWithCurrency(settledAfter, currency)}
+      </p>
+    </div>
+  );
+}
+
+function ImpactMetric({ label, value, strong = false }) {
+  return (
+    <div className="rounded-xl bg-white px-3 py-2">
+      <p className="text-[10px] font-bold text-amber-700">{label}</p>
+      <p dir="ltr" className={`mt-0.5 font-mono text-xs tabular-nums ${strong ? "font-black text-amber-950" : "font-bold text-slate-900"}`}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -1611,13 +1668,13 @@ function ModalField({ label, required, children }) {
   );
 }
 
-function ModalActions({ loading, onClose, onConfirm, confirmText }) {
+function ModalActions({ loading, onClose, onConfirm, confirmText, compact = false }) {
   return (
-    <div className="flex items-center gap-2 pt-2">
-      <button type="button" onClick={onClose} disabled={loading} className="ep-btn ep-btn-ghost h-11 flex-1">
+    <div className={`flex items-center gap-2 ${compact ? "pt-1" : "pt-2"}`}>
+      <button type="button" onClick={onClose} disabled={loading} className={`ep-btn ep-btn-ghost flex-1 ${compact ? "h-10" : "h-11"}`}>
         إلغاء
       </button>
-      <button type={onConfirm ? "button" : "submit"} onClick={onConfirm} disabled={loading} className="ep-btn ep-btn-primary h-11 flex-1">
+      <button type={onConfirm ? "button" : "submit"} onClick={onConfirm} disabled={loading} className={`ep-btn ep-btn-primary flex-1 ${compact ? "h-10" : "h-11"}`}>
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
         {confirmText}
       </button>

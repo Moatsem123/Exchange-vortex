@@ -87,12 +87,23 @@ function canEditMovement(type) {
   return ["initial_deposit", "top_up", "withdrawal"].includes(type);
 }
 
+function toNumber(value) {
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : 0;
+}
+
+function sumAccountField(accounts, field) {
+  return accounts.reduce((total, account) => total + toNumber(account?.[field]), 0);
+}
+
 export default function CapitalPage() {
   const toast = useToast();
   const { hasPermission } = useAuth();
 
   const [accounts, setAccounts] = useState([]);
   const [summaries, setSummaries] = useState([]);
+  const [capitalMetrics, setCapitalMetrics] = useState(null);
   const [selectedCurrency, setSelectedCurrency] = useState("USD");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -124,12 +135,13 @@ export default function CapitalPage() {
 
   const currencies = useMemo(() => {
     const list = [
+      capitalMetrics?.currency,
       ...summaries.map((item) => item.currency),
       ...accounts.map((item) => item.currency),
     ].filter(Boolean);
 
     return Array.from(new Set(list)).sort();
-  }, [accounts, summaries]);
+  }, [accounts, capitalMetrics, summaries]);
 
   const activeSummary = useMemo(
     () =>
@@ -158,27 +170,60 @@ export default function CapitalPage() {
       });
   }, [accounts, search, selectedCurrency]);
 
+  const activeCapitalMetrics = useMemo(() => {
+    if (capitalMetrics?.currency === selectedCurrency) {
+      return capitalMetrics;
+    }
+
+    const currencyAccounts = accounts.filter((account) => account.currency === selectedCurrency);
+    const unallocatedCapital = sumAccountField(currencyAccounts, "unallocated_balance");
+    const allocatedCapital = sumAccountField(currencyAccounts, "allocated_balance");
+    const registeredCapital = sumAccountField(currencyAccounts, "current_balance");
+
+    return {
+      currency: selectedCurrency,
+      registered_capital: registeredCapital || activeSummary.total_capital,
+      unallocated_capital: unallocatedCapital,
+      allocated_capital: allocatedCapital,
+      boxes_liquidity: 0,
+      funds_under_management: unallocatedCapital,
+    };
+  }, [accounts, activeSummary.total_capital, capitalMetrics, selectedCurrency]);
+
   const loadAccounts = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const res = await capitalService.accounts();
+      const [accountsRes, dashboardRes] = await Promise.allSettled([
+        capitalService.accounts(),
+        capitalService.dashboard(),
+      ]);
+
+      if (accountsRes.status === "rejected") {
+        throw accountsRes.reason;
+      }
+
+      const res = accountsRes.value;
       const payload = unwrapPayload(res);
       const nextSummaries = Array.isArray(payload.summaries) ? payload.summaries : [];
       const nextAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+      const nextMetrics = dashboardRes.status === "fulfilled" ? unwrapPayload(dashboardRes.value) : null;
       const nextCurrencies = Array.from(
         new Set([
+          nextMetrics?.currency,
           ...nextSummaries.map((item) => item.currency),
           ...nextAccounts.map((item) => item.currency),
         ].filter(Boolean))
       );
 
+      setCapitalMetrics(nextMetrics);
       setSummaries(nextSummaries);
       setAccounts(nextAccounts);
       setSelectedCurrency((current) => (nextCurrencies.includes(current) ? current : nextCurrencies[0] || "USD"));
     } catch (err) {
       setError(err);
+      setCapitalMetrics(null);
       setSummaries([]);
       setAccounts([]);
     } finally {
@@ -443,7 +488,86 @@ export default function CapitalPage() {
         <ErrorState title="تعذّر تحميل رأس المال" description={extractApiError(error)} onRetry={loadAccounts} />
       ) : (
         <>
+          <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="relative min-w-0 overflow-hidden rounded-2xl border border-teal-200 bg-teal-50 p-5 shadow-sm">
+              <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 text-right">
+                  <p className="text-sm font-black text-teal-700">إجمالي الأموال تحت الإدارة</p>
+                  <p dir="ltr" className="mt-3 max-w-full truncate font-mono text-3xl font-black text-slate-950 sm:text-4xl">
+                    {money(activeCapitalMetrics.funds_under_management, activeCapitalMetrics.currency)}
+                  </p>
+                  <p className="mt-3 text-xs font-bold leading-6 text-teal-800">
+                    رأس المال المتاح مضافًا إليه سيولة الصناديق، بدون تكرار رأس المال الموجود داخل الصناديق.
+                  </p>
+                </div>
+
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-white text-teal-700">
+                  <Wallet className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <label className="block text-right">
+                <span className="mb-2 block text-xs font-bold text-slate-500">العملة</span>
+                <select
+                  value={selectedCurrency}
+                  onChange={(e) => setSelectedCurrency(e.target.value)}
+                  className="ep-input appearance-none"
+                >
+                  {(currencies.length ? currencies : ["USD"]).map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold leading-6 text-slate-500">
+                إجمالي الأموال تحت الإدارة = رأس المال المتاح + سيولة الصناديق
+              </div>
+            </div>
+          </section>
+
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              title="رأس المال المسجل"
+              value={activeCapitalMetrics.registered_capital}
+              suffix={` ${activeCapitalMetrics.currency}`}
+              icon={FileText}
+              color="slate"
+              decimals={2}
+            />
+
+            <StatCard
+              title="رأس المال المتاح"
+              value={activeCapitalMetrics.unallocated_capital}
+              suffix={` ${activeCapitalMetrics.currency}`}
+              icon={Wallet}
+              color="emerald"
+              decimals={2}
+            />
+
+            <StatCard
+              title="رأس المال داخل الصناديق"
+              value={activeCapitalMetrics.allocated_capital}
+              suffix={` ${activeCapitalMetrics.currency}`}
+              icon={PiggyBank}
+              color="amber"
+              decimals={2}
+            />
+
+            <StatCard
+              title="سيولة الصناديق"
+              value={activeCapitalMetrics.boxes_liquidity}
+              suffix={` ${activeCapitalMetrics.currency}`}
+              icon={Wallet}
+              color="blue"
+              decimals={2}
+            />
+          </section>
+
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <StatCard
               title="رأس مالي الخاص"
               value={activeSummary.own_capital}
@@ -470,23 +594,6 @@ export default function CapitalPage() {
               color="emerald"
               decimals={2}
             />
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <label className="block text-right">
-                <span className="mb-2 block text-xs font-bold text-slate-500">العملة</span>
-                <select
-                  value={selectedCurrency}
-                  onChange={(e) => setSelectedCurrency(e.target.value)}
-                  className="ep-input appearance-none"
-                >
-                  {(currencies.length ? currencies : ["USD"]).map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
           </section>
 
           <section className="ep-card-static min-w-0 overflow-hidden">
@@ -538,12 +645,14 @@ export default function CapitalPage() {
               </div>
             ) : (
               <div className="max-w-full overflow-x-auto">
-                <table className="ep-table min-w-[900px]">
+                <table className="ep-table min-w-[1100px]">
                   <thead>
                     <tr>
                       <th>الاسم</th>
                       <th>النوع</th>
                       <th>الرصيد الحالي</th>
+                      <th>المتاح</th>
+                      <th>داخل الصناديق</th>
                       <th>العملة</th>
                       <th>آخر حركة</th>
                       <th>الإجراءات</th>
@@ -561,6 +670,12 @@ export default function CapitalPage() {
                         </td>
                         <td dir="ltr" className="font-mono font-black text-slate-900">
                           {money(account.current_balance, account.currency)}
+                        </td>
+                        <td dir="ltr" className="font-mono font-bold text-emerald-700">
+                          {money(account.unallocated_balance, account.currency)}
+                        </td>
+                        <td dir="ltr" className="font-mono font-bold text-amber-700">
+                          {money(account.allocated_balance, account.currency)}
                         </td>
                         <td>{account.currency}</td>
                         <td>{account.last_movement_date ? formatDate(account.last_movement_date) : "—"}</td>
@@ -902,7 +1017,7 @@ function AccountDetails({ details, loading, canCreate, canUpdate, canDelete, onA
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-right md:col-span-2">
           <Badge color={accountTypeColor(account.type)}>{getCapitalAccountTypeLabel(account.type)}</Badge>
           <h3 className="mt-3 text-lg font-black text-slate-950">{account.name}</h3>
@@ -913,6 +1028,20 @@ function AccountDetails({ details, loading, canCreate, canUpdate, canDelete, onA
           <p className="text-xs font-black opacity-75">الرصيد الحالي</p>
           <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
             {money(account.current_balance, account.currency)}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-right text-teal-900">
+          <p className="text-xs font-black opacity-75">المتاح</p>
+          <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
+            {money(account.unallocated_balance, account.currency)}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-right text-amber-900">
+          <p className="text-xs font-black opacity-75">داخل الصناديق</p>
+          <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
+            {money(account.allocated_balance, account.currency)}
           </p>
         </div>
       </div>
