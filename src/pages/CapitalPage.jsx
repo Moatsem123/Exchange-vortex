@@ -1,18 +1,17 @@
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CalendarDays,
-  Edit2,
-  Eye,
-  FileText,
-  Loader2,
-  Minus,
-  PiggyBank,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
   Wallet,
+  Plus,
+  Minus,
+  ArrowRightLeft,
+  RefreshCw,
+  Loader2,
+  DollarSign,
+  PiggyBank,
+  Building2,
+  CalendarDays,
+  FileText,
+  Search,
 } from "lucide-react";
 
 import StatCard from "../shared/StatCard";
@@ -20,33 +19,120 @@ import EmptyState from "../shared/EmptyState";
 import ErrorState from "../shared/ErrorState";
 import Badge from "../shared/Badge";
 import Modal from "../shared/Modal";
+import Pagination from "../shared/Pagination";
 import { useToast } from "../shared/Toast";
-import { useAuth } from "../context/AuthContext";
 import capitalService from "../services/capital";
-import { extractApiError, formatDate, formatMoney } from "../shared/helpers";
-import { getCapitalAccountTypeLabel, getCapitalMovementMeta } from "../shared/capitalTypes";
+import boxesService from "../services/boxes";
+import { extractApiError, formatDate, formatMoney, unwrapList } from "../shared/helpers";
 
-const INITIAL_ACCOUNT_FORM = {
-  type: "own",
-  name: "",
+const PER_PAGE = 20;
+
+const INITIAL_FORM = {
   amount: "",
-  currency: "USD",
   transaction_date: new Date().toISOString().split("T")[0],
-  reference_number: "",
   notes: "",
+  box_id: "",
 };
 
-const INITIAL_MOVEMENT_FORM = {
-  type: "top_up",
-  amount: "",
-  transaction_date: new Date().toISOString().split("T")[0],
-  reference_number: "",
-  notes: "",
+const ACTIONS = {
+  deposit: {
+    title: "إيداع رأس مال",
+    subtitle: "إضافة رصيد إلى رأس مال الشركة",
+    icon: Plus,
+  },
+  withdraw: {
+    title: "سحب رأس مال",
+    subtitle: "سحب مبلغ من رأس المال الحر",
+    icon: Minus,
+  },
+  transfer: {
+    title: "تحويل رأس مال إلى صندوق",
+    subtitle: "نقل مبلغ من رأس المال الحر إلى صندوق تشغيلي",
+    icon: ArrowRightLeft,
+  },
 };
 
 function unwrapPayload(res) {
   const data = res?.data || res || {};
   return data?.data || data || {};
+}
+
+function normalizeList(res) {
+  const normalized = unwrapList(res);
+
+  if (Array.isArray(normalized)) return normalized;
+  if (Array.isArray(normalized?.items)) return normalized.items;
+  if (Array.isArray(normalized?.data)) return normalized.data;
+  if (Array.isArray(res?.data)) return res.data;
+
+  return [];
+}
+
+function normalizeTransactions(res) {
+  const normalized = unwrapList(res);
+
+  if (Array.isArray(normalized)) {
+    return {
+      items: normalized,
+      meta: {
+        total: normalized.length,
+        current_page: 1,
+        last_page: 1,
+        per_page: PER_PAGE,
+      },
+    };
+  }
+
+  return {
+    items: normalized.items || normalized.data || res?.data || [],
+    meta: normalized.meta || res?.meta || {
+      total: normalized.items?.length || 0,
+      current_page: 1,
+      last_page: 1,
+      per_page: PER_PAGE,
+    },
+  };
+}
+
+function getTransactionTypeLabel(type) {
+  const labels = {
+    deposit: "إيداع",
+    withdraw: "سحب",
+    transfer_to_box: "تحويل إلى صندوق",
+    transfer: "تحويل",
+    expense: "مصروف",
+  };
+
+  return labels[type] || type || "—";
+}
+
+function getTransactionBadgeColor(type) {
+  if (type === "deposit") return "emerald";
+  if (type === "withdraw") return "rose";
+  if (type === "transfer_to_box" || type === "transfer") return "teal";
+  if (type === "expense") return "amber";
+  return "slate";
+}
+
+function getBoxLabel(box) {
+  if (!box) return "—";
+
+  const typeLabel = {
+    turkish: "صندوق تركيا",
+    local_bank_wallet: "بنك/محفظة",
+    usdt_wallet: "محفظة إلكترونية",
+  }[box.type] || box.type || "صندوق";
+
+  return `${box.name || `#${box.id}`} - ${typeLabel}`;
+}
+
+function getAmountClass(value) {
+  const amount = Number(value || 0);
+
+  if (amount > 0) return "text-emerald-700";
+  if (amount < 0) return "text-rose-700";
+
+  return "text-slate-700";
 }
 
 function mapValidationErrors(err) {
@@ -63,382 +149,196 @@ function mapValidationErrors(err) {
   return mapped;
 }
 
-function money(value, currency = "USD") {
-  return `${formatMoney(Number(value || 0))} ${currency || "USD"}`;
-}
-
-function accountTypeColor(type) {
-  return type === "own" || type === "owner" ? "teal" : "violet";
-}
-
-function movementAmountClass(value) {
-  return Number(value || 0) < 0 ? "text-rose-700" : "text-emerald-700";
-}
-
-function movementSign(value) {
-  return Number(value || 0) < 0 ? "" : "+";
-}
-
-function userLabel(user) {
-  return user?.name || user?.email || "—";
-}
-
-function canEditMovement(type) {
-  return ["initial_deposit", "top_up", "withdrawal"].includes(type);
-}
-
-function toNumber(value) {
-  const number = Number(value);
-
-  return Number.isFinite(number) ? number : 0;
-}
-
-function sumAccountField(accounts, field) {
-  return accounts.reduce((total, account) => total + toNumber(account?.[field]), 0);
-}
-
 export default function CapitalPage() {
   const toast = useToast();
-  const { hasPermission } = useAuth();
 
-  const [accounts, setAccounts] = useState([]);
-  const [summaries, setSummaries] = useState([]);
-  const [capitalMetrics, setCapitalMetrics] = useState(null);
-  const [selectedCurrency, setSelectedCurrency] = useState("USD");
+  const [summary, setSummary] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [boxes, setBoxes] = useState([]);
+
+  const [meta, setMeta] = useState({
+    total: 0,
+    current_page: 1,
+    last_page: 1,
+    per_page: PER_PAGE,
+  });
+
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+
   const [loading, setLoading] = useState(true);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const [accountModalOpen, setAccountModalOpen] = useState(false);
-  const [accountForm, setAccountForm] = useState(INITIAL_ACCOUNT_FORM);
-  const [accountErrors, setAccountErrors] = useState({});
+  const [actionType, setActionType] = useState(null);
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [formErrors, setFormErrors] = useState({});
 
-  const [movementAccount, setMovementAccount] = useState(null);
-  const [movementForm, setMovementForm] = useState(INITIAL_MOVEMENT_FORM);
-  const [movementErrors, setMovementErrors] = useState({});
+  const activeAction = actionType ? ACTIONS[actionType] : null;
 
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const [details, setDetails] = useState(null);
-
-  const [editMovement, setEditMovement] = useState(null);
-  const [editForm, setEditForm] = useState(INITIAL_MOVEMENT_FORM);
-  const [editErrors, setEditErrors] = useState({});
-
-  const [pending, setPending] = useState(null);
-
-  const canCreateAccount = hasPermission(["capital.account.create", "capital.movement.create"]);
-  const canCreateMovementPermission = hasPermission(["capital.movement.create"]);
-  const canUpdateMovementPermission = hasPermission(["capital.movement.update"]);
-  const canDeleteMovementPermission = hasPermission(["capital.movement.delete"]);
-
-  const currencies = useMemo(() => {
-    const list = [
-      capitalMetrics?.currency,
-      ...summaries.map((item) => item.currency),
-      ...accounts.map((item) => item.currency),
-    ].filter(Boolean);
-
-    return Array.from(new Set(list)).sort();
-  }, [accounts, capitalMetrics, summaries]);
-
-  const activeSummary = useMemo(
-    () =>
-      summaries.find((item) => item.currency === selectedCurrency) || {
-        currency: selectedCurrency,
-        own_capital: 0,
-        investor_capital: 0,
-        total_capital: 0,
-      },
-    [summaries, selectedCurrency]
-  );
-
-  const filteredAccounts = useMemo(() => {
+  const filteredTransactions = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return accounts
-      .filter((account) => !selectedCurrency || account.currency === selectedCurrency)
-      .filter((account) => {
-        if (!term) return true;
+    if (!term) return transactions;
 
-        return (
-          String(account.name || "").toLowerCase().includes(term) ||
-          String(account.type || "").toLowerCase().includes(term) ||
-          String(account.currency || "").toLowerCase().includes(term)
-        );
-      });
-  }, [accounts, search, selectedCurrency]);
+    return transactions.filter((item) => {
+      const boxName = item?.box?.name || "";
 
-  const activeCapitalMetrics = useMemo(() => {
-    if (capitalMetrics?.currency === selectedCurrency) {
-      return capitalMetrics;
+      return (
+        String(item.id || "").includes(term) ||
+        String(item.type || "").toLowerCase().includes(term) ||
+        String(item.notes || "").toLowerCase().includes(term) ||
+        boxName.toLowerCase().includes(term)
+      );
+    });
+  }, [transactions, search]);
+
+  const loadBoxes = useCallback(async () => {
+    try {
+      const res = await boxesService.list({ per_page: 100 });
+      setBoxes(normalizeList(res));
+    } catch {
+      setBoxes([]);
     }
+  }, []);
 
-    const currencyAccounts = accounts.filter((account) => account.currency === selectedCurrency);
-    const unallocatedCapital = sumAccountField(currencyAccounts, "unallocated_balance");
-    const allocatedCapital = sumAccountField(currencyAccounts, "allocated_balance");
-    const registeredCapital = sumAccountField(currencyAccounts, "current_balance");
-
-    return {
-      currency: selectedCurrency,
-      registered_capital: registeredCapital || activeSummary.total_capital,
-      unallocated_capital: unallocatedCapital,
-      allocated_capital: allocatedCapital,
-      boxes_liquidity: 0,
-      funds_under_management: unallocatedCapital,
-    };
-  }, [accounts, activeSummary.total_capital, capitalMetrics, selectedCurrency]);
-
-  const loadAccounts = useCallback(async () => {
-    setLoading(true);
+  const loadSummary = useCallback(async () => {
     setError(null);
 
     try {
-      const [accountsRes, dashboardRes] = await Promise.allSettled([
-        capitalService.accounts(),
-        capitalService.dashboard(),
-      ]);
-
-      if (accountsRes.status === "rejected") {
-        throw accountsRes.reason;
-      }
-
-      const res = accountsRes.value;
-      const payload = unwrapPayload(res);
-      const nextSummaries = Array.isArray(payload.summaries) ? payload.summaries : [];
-      const nextAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
-      const nextMetrics = dashboardRes.status === "fulfilled" ? unwrapPayload(dashboardRes.value) : null;
-      const nextCurrencies = Array.from(
-        new Set([
-          nextMetrics?.currency,
-          ...nextSummaries.map((item) => item.currency),
-          ...nextAccounts.map((item) => item.currency),
-        ].filter(Boolean))
-      );
-
-      setCapitalMetrics(nextMetrics);
-      setSummaries(nextSummaries);
-      setAccounts(nextAccounts);
-      setSelectedCurrency((current) => (nextCurrencies.includes(current) ? current : nextCurrencies[0] || "USD"));
+      const res = await capitalService.dashboard();
+      setSummary(unwrapPayload(res));
     } catch (err) {
       setError(err);
-      setCapitalMetrics(null);
-      setSummaries([]);
-      setAccounts([]);
-    } finally {
-      setLoading(false);
+      setSummary(null);
     }
+  }, []);
+
+  const loadTransactions = useCallback(async () => {
+    setTransactionsLoading(true);
+
+    try {
+      const res = await capitalService.transactions({
+        page,
+        per_page: PER_PAGE,
+      });
+
+      const normalized = normalizeTransactions(res);
+
+      setTransactions(normalized.items);
+      setMeta({
+        total: Number(normalized.meta?.total ?? normalized.items.length),
+        current_page: Number(normalized.meta?.current_page ?? page),
+        last_page: Number(normalized.meta?.last_page ?? 1),
+        per_page: Number(normalized.meta?.per_page ?? PER_PAGE),
+      });
+    } catch {
+      setTransactions([]);
+    } finally {
+      setTransactionsLoading(false);
+    }
+  }, [page]);
+
+  async function loadAll() {
+    setLoading(true);
+
+    await Promise.all([loadSummary(), loadTransactions(), loadBoxes()]);
+
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadAll();
   }, []);
 
   useEffect(() => {
-    loadAccounts();
-  }, []);
+    loadTransactions();
+  }, [loadTransactions]);
 
-  async function loadDetails(account) {
-    setDetailsOpen(true);
-    setDetailsLoading(true);
-    setDetails(null);
+  function openAction(type) {
+    setActionType(type);
+    setForm(INITIAL_FORM);
+    setFormErrors({});
+  }
 
-    try {
-      const res = await capitalService.showAccount(account.id, { currency: account.currency });
-      setDetails(unwrapPayload(res));
-    } catch (err) {
-      toast.error(extractApiError(err));
-    } finally {
-      setDetailsLoading(false);
+  function closeAction() {
+    if (busy) return;
+
+    setActionType(null);
+    setForm(INITIAL_FORM);
+    setFormErrors({});
+  }
+
+  function validateForm() {
+    const nextErrors = {};
+
+    if (!form.amount || Number(form.amount) <= 0) {
+      nextErrors.amount = "أدخل مبلغ صحيح";
     }
-  }
 
-  function openAccountModal() {
-    setAccountForm({
-      ...INITIAL_ACCOUNT_FORM,
-      currency: selectedCurrency || "USD",
-    });
-    setAccountErrors({});
-    setAccountModalOpen(true);
-  }
-
-  function openMovementModal(account, type = "top_up") {
-    setMovementAccount(account);
-    setMovementForm({
-      ...INITIAL_MOVEMENT_FORM,
-      type,
-    });
-    setMovementErrors({});
-  }
-
-  function openEditMovement(movement) {
-    setEditMovement(movement);
-    setEditForm({
-      type: movement.type,
-      amount: String(movement.absolute_amount ?? Math.abs(Number(movement.amount || 0))),
-      transaction_date: movement.transaction_date || new Date().toISOString().split("T")[0],
-      reference_number: movement.reference_number || "",
-      notes: movement.notes || movement.statement || "",
-    });
-    setEditErrors({});
-  }
-
-  function validateAccountForm() {
-    const errors = {};
-
-    if (!accountForm.type) errors.type = "اختر نوع رأس المال";
-    if (accountForm.type === "investor" && !accountForm.name.trim()) errors.name = "اكتب اسم المستثمر أو الشركة";
-    if (!accountForm.amount || Number(accountForm.amount) <= 0) errors.amount = "أدخل مبلغ صحيح";
-    if (!accountForm.currency.trim()) errors.currency = "أدخل العملة";
-    if (!accountForm.transaction_date) errors.transaction_date = "اختر تاريخ الحركة";
-
-    setAccountErrors(errors);
-
-    return Object.keys(errors).length === 0;
-  }
-
-  function validateMovementForm(form, setErrors) {
-    const errors = {};
-
-    if (!form.type) errors.type = "اختر نوع الحركة";
-    if (!form.amount || Number(form.amount) <= 0) errors.amount = "أدخل مبلغ صحيح";
-    if (!form.transaction_date) errors.transaction_date = "اختر تاريخ الحركة";
-
-    setErrors(errors);
-
-    return Object.keys(errors).length === 0;
-  }
-
-  function submitAccount(e) {
-    e.preventDefault();
-
-    if (!validateAccountForm()) return;
-
-    const payload = {
-      ...accountForm,
-      amount: Number(accountForm.amount),
-      name: accountForm.type === "investor" ? accountForm.name.trim() : null,
-      notes: accountForm.notes.trim() || null,
-      statement: accountForm.notes.trim() || null,
-      reference_number: accountForm.reference_number.trim() || null,
-    };
-
-    const target = accountForm.type === "investor" ? accountForm.name.trim() : "رأس مالي الخاص";
-
-    setPending({
-      type: "account",
-      payload,
-      message: `هل أنت متأكد من إضافة ${money(payload.amount, payload.currency)} إلى ${target}؟`,
-    });
-  }
-
-  function submitMovement(e) {
-    e.preventDefault();
-
-    if (!validateMovementForm(movementForm, setMovementErrors)) return;
-
-    const payload = {
-      ...movementForm,
-      amount: Number(movementForm.amount),
-      notes: movementForm.notes.trim() || null,
-      statement: movementForm.notes.trim() || null,
-      reference_number: movementForm.reference_number.trim() || null,
-    };
-    const isWithdrawal = payload.type === "withdrawal";
-
-    setPending({
-      type: "movement",
-      account: movementAccount,
-      payload,
-      message: isWithdrawal
-        ? `هل أنت متأكد من سحب ${money(payload.amount, movementAccount.currency)} من ${movementAccount.name}؟`
-        : `هل أنت متأكد من إضافة ${money(payload.amount, movementAccount.currency)} إلى ${movementAccount.name}؟`,
-    });
-  }
-
-  function submitEdit(e) {
-    e.preventDefault();
-
-    if (!validateMovementForm(editForm, setEditErrors)) return;
-
-    const payload = {
-      amount: Number(editForm.amount),
-      transaction_date: editForm.transaction_date,
-      notes: editForm.notes.trim() || null,
-      statement: editForm.notes.trim() || null,
-      reference_number: editForm.reference_number.trim() || null,
-    };
-
-    setPending({
-      type: "edit",
-      movement: editMovement,
-      payload,
-      message: "سيتم إعادة احتساب أثر هذه الحركة على رصيد حساب رأس المال بعد التعديل.",
-    });
-  }
-
-  function requestDeleteMovement(movement) {
-    setPending({
-      type: "delete",
-      movement,
-      message: `هل أنت متأكد من حذف حركة ${getCapitalMovementMeta(movement.type).label} بقيمة ${money(movement.absolute_amount ?? Math.abs(Number(movement.amount || 0)), movement.currency)}؟ سيتم عكس الأثر المالي لهذه الحركة من رصيد رأس المال.`,
-    });
-  }
-
-  async function refreshAfterMutation(accountId = details?.account?.id) {
-    await loadAccounts();
-
-    if (accountId) {
-      const current = accounts.find((account) => Number(account.id) === Number(accountId)) || details?.account;
-
-      if (current) {
-        await loadDetails(current);
-      }
+    if (!form.transaction_date) {
+      nextErrors.transaction_date = "اختر تاريخ الحركة";
     }
+
+    if (actionType === "transfer" && !form.box_id) {
+      nextErrors.box_id = "اختر الصندوق";
+    }
+
+    setFormErrors(nextErrors);
+
+    return Object.keys(nextErrors).length === 0;
   }
 
-  async function confirmPending() {
-    if (!pending) return;
+  async function submitAction(e) {
+    e.preventDefault();
+
+    if (!validateForm()) return;
 
     setBusy(true);
+    setFormErrors({});
+
+    const payload = {
+      amount: Number(form.amount),
+      transaction_date: form.transaction_date,
+      notes: form.notes?.trim() || null,
+    };
+
+    if (actionType === "transfer") {
+      payload.box_id = Number(form.box_id);
+    }
 
     try {
-      if (pending.type === "account") {
-        await capitalService.createAccount(pending.payload);
-        toast.success("تم حفظ رأس المال");
-        setAccountModalOpen(false);
-        setAccountForm(INITIAL_ACCOUNT_FORM);
+      if (actionType === "deposit") {
+        await capitalService.deposit(payload);
+        toast.success("تم إيداع رأس المال");
       }
 
-      if (pending.type === "movement") {
-        await capitalService.createMovement(pending.account.id, pending.payload);
-        toast.success("تم حفظ حركة رأس المال");
-        setMovementAccount(null);
-        setMovementForm(INITIAL_MOVEMENT_FORM);
+      if (actionType === "withdraw") {
+        await capitalService.withdraw(payload);
+        toast.success("تم سحب رأس المال");
       }
 
-      if (pending.type === "edit") {
-        await capitalService.updateMovement(pending.movement.id, pending.payload);
-        toast.success("تم تعديل حركة رأس المال");
-        setEditMovement(null);
+      if (actionType === "transfer") {
+        await capitalService.transferToBox(payload);
+        toast.success("تم تحويل رأس المال إلى الصندوق");
       }
 
-      if (pending.type === "delete") {
-        await capitalService.deleteMovement(pending.movement.id);
-        toast.success("تم حذف حركة رأس المال");
-      }
-
-      await refreshAfterMutation(pending.account?.id || details?.account?.id);
-      setPending(null);
+      closeAction();
+      await loadAll();
     } catch (err) {
-      const errors = mapValidationErrors(err);
-
-      if (pending.type === "account") setAccountErrors(errors);
-      if (pending.type === "movement") setMovementErrors(errors);
-      if (pending.type === "edit") setEditErrors(errors);
-
+      setFormErrors(mapValidationErrors(err));
       toast.error(extractApiError(err));
     } finally {
       setBusy(false);
     }
   }
+
+  const capitalBalance = Number(summary?.capital_balance ?? 0);
+  const freeCapital = Number(summary?.free_capital ?? 0);
+  const boxesTotal = Number(summary?.boxes_total_balance ?? 0);
+  const monthlyExpenses = Number(summary?.monthly_expenses ?? 0);
+  const yearlyExpenses = Number(summary?.yearly_expenses ?? 0);
 
   return (
     <div className="min-w-0 space-y-5">
@@ -451,158 +351,140 @@ export default function CapitalPage() {
 
             <div className="min-w-0 flex-1 text-right">
               <h1 className="break-words text-xl font-black leading-8 text-slate-950 sm:text-2xl">
-                إدارة رأس المال
+                رأس المال
               </h1>
               <p className="mt-1 max-w-full break-words text-xs font-semibold leading-6 text-slate-500 sm:text-sm">
-                متابعة رأس مالي الخاص ورأس مال المستثمرين كسجلات منفصلة مع سجل حركات لكل حساب
+                إدارة رأس مال الشركة، الإيداعات، السحوبات، والتحويل إلى الصناديق
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:items-center xl:justify-end">
             <button
               type="button"
-              onClick={loadAccounts}
+              onClick={loadAll}
               disabled={loading}
-              className="ep-btn ep-btn-ghost h-11 justify-center px-3 text-xs sm:px-4 sm:text-sm"
+              className="ep-btn ep-btn-ghost h-11 min-w-0 justify-center px-3 text-xs sm:px-4 sm:text-sm"
             >
               <RefreshCw className={`h-4 w-4 shrink-0 ${loading ? "animate-spin" : ""}`} />
               <span className="truncate">تحديث</span>
             </button>
 
-            {canCreateAccount && (
-              <button
-                type="button"
-                onClick={openAccountModal}
-                className="ep-btn ep-btn-primary h-11 justify-center px-3 text-xs sm:px-4 sm:text-sm"
-              >
-                <Plus className="h-4 w-4 shrink-0" />
-                <span className="truncate">إضافة رأس مال</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => openAction("deposit")}
+              className="ep-btn ep-btn-primary h-11 min-w-0 justify-center px-3 text-xs sm:px-4 sm:text-sm"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span className="truncate">إيداع</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openAction("withdraw")}
+              className="ep-btn h-11 min-w-0 justify-center border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 hover:bg-rose-100 sm:px-4 sm:text-sm"
+            >
+              <Minus className="h-4 w-4 shrink-0" />
+              <span className="truncate">سحب</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openAction("transfer")}
+              className="ep-btn h-11 min-w-0 justify-center border border-teal-200 bg-teal-50 px-3 text-xs font-black text-teal-700 hover:bg-teal-100 sm:px-4 sm:text-sm"
+            >
+              <ArrowRightLeft className="h-4 w-4 shrink-0" />
+              <span className="truncate">تحويل لصندوق</span>
+            </button>
           </div>
         </div>
       </section>
 
       {error && !loading ? (
-        <ErrorState title="تعذّر تحميل رأس المال" description={extractApiError(error)} onRetry={loadAccounts} />
+        <ErrorState
+          title="تعذّر تحميل رأس المال"
+          description={extractApiError(error)}
+          onRetry={loadAll}
+        />
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="relative min-w-0 overflow-hidden rounded-2xl border border-teal-200 bg-teal-50 p-5 shadow-sm">
-              <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 text-right">
-                  <p className="text-sm font-black text-teal-700">إجمالي الأموال تحت الإدارة</p>
-                  <p dir="ltr" className="mt-3 max-w-full truncate font-mono text-3xl font-black text-slate-950 sm:text-4xl">
-                    {money(activeCapitalMetrics.funds_under_management, activeCapitalMetrics.currency)}
-                  </p>
-                  <p className="mt-3 text-xs font-bold leading-6 text-teal-800">
-                    رأس المال المتاح مضافًا إليه سيولة الصناديق، بدون تكرار رأس المال الموجود داخل الصناديق.
-                  </p>
-                </div>
-
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-white text-teal-700">
-                  <Wallet className="h-6 w-6" />
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <label className="block text-right">
-                <span className="mb-2 block text-xs font-bold text-slate-500">العملة</span>
-                <select
-                  value={selectedCurrency}
-                  onChange={(e) => setSelectedCurrency(e.target.value)}
-                  className="ep-input appearance-none"
-                >
-                  {(currencies.length ? currencies : ["USD"]).map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold leading-6 text-slate-500">
-                إجمالي الأموال تحت الإدارة = رأس المال المتاح + سيولة الصناديق
-              </div>
-            </div>
-          </section>
-
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              title="رأس المال المسجل"
-              value={activeCapitalMetrics.registered_capital}
-              suffix={` ${activeCapitalMetrics.currency}`}
-              icon={FileText}
-              color="slate"
-              decimals={2}
-            />
-
-            <StatCard
-              title="رأس المال المتاح"
-              value={activeCapitalMetrics.unallocated_capital}
-              suffix={` ${activeCapitalMetrics.currency}`}
-              icon={Wallet}
+              title="إجمالي رأس المال"
+              value={capitalBalance}
+              prefix="$"
+              icon={DollarSign}
               color="emerald"
               decimals={2}
             />
 
             <StatCard
-              title="رأس المال داخل الصناديق"
-              value={activeCapitalMetrics.allocated_capital}
-              suffix={` ${activeCapitalMetrics.currency}`}
-              icon={PiggyBank}
-              color="amber"
-              decimals={2}
-            />
-
-            <StatCard
-              title="سيولة الصناديق"
-              value={activeCapitalMetrics.boxes_liquidity}
-              suffix={` ${activeCapitalMetrics.currency}`}
-              icon={Wallet}
-              color="blue"
-              decimals={2}
-            />
-          </section>
-
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <StatCard
-              title="رأس مالي الخاص"
-              value={activeSummary.own_capital}
-              suffix={` ${activeSummary.currency}`}
+              title="رأس المال الحر"
+              value={freeCapital}
+              prefix="$"
               icon={Wallet}
               color="teal"
               decimals={2}
             />
 
             <StatCard
-              title="رأس مال المستثمرين"
-              value={activeSummary.investor_capital}
-              suffix={` ${activeSummary.currency}`}
-              icon={PiggyBank}
+              title="أرصدة الصناديق"
+              value={boxesTotal}
+              prefix="$"
+              icon={Building2}
               color="violet"
               decimals={2}
             />
 
             <StatCard
-              title="إجمالي رأس المال"
-              value={activeSummary.total_capital}
-              suffix={` ${activeSummary.currency}`}
-              icon={FileText}
-              color="emerald"
+              title="مصروفات السنة"
+              value={yearlyExpenses}
+              prefix="$"
+              icon={CalendarDays}
+              color="amber"
               decimals={2}
             />
           </section>
 
+          <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge color="teal">معادلة رأس المال</Badge>
+
+                <div className="min-w-0 text-right">
+                  <h3 className="truncate text-base font-black text-slate-900">الوضع المالي الحالي</h3>
+                  <p className="text-xs leading-6 text-slate-500">
+                    ملخص الوضع المالي الحالي حسب بيانات النظام
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <InfoBox label="رأس المال الكلي" value={capitalBalance} color="emerald" />
+                <InfoBox label="رأس المال الحر" value={freeCapital} color="teal" />
+                <InfoBox label="الصناديق" value={boxesTotal} color="violet" />
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="text-right">
+                <h3 className="text-base font-black text-slate-900">مصروفات الشهر</h3>
+                <p className="text-xs leading-6 text-slate-500">المصروفات المسجلة خلال الشهر الحالي</p>
+              </div>
+
+              <p dir="ltr" className="mt-6 truncate font-mono text-3xl font-black text-rose-700">
+                ${formatMoney(monthlyExpenses)}
+              </p>
+            </div>
+          </section>
+
           <section className="ep-card-static min-w-0 overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
-              <Badge color="teal">{filteredAccounts.length} حساب</Badge>
+              <Badge color="teal">{filteredTransactions.length} حركة</Badge>
 
               <div className="min-w-0 text-right">
-                <h3 className="truncate text-base font-black text-slate-900">حسابات رأس المال</h3>
-                <p className="text-xs text-slate-500">كل صف يمثل مالك رأس مال واحد، والحركات تظهر من عرض التفاصيل</p>
+                <h3 className="truncate text-base font-black text-slate-900">سجل حركات رأس المال</h3>
+                <p className="text-xs text-slate-500">كل الإيداعات والسحوبات والتحويلات</p>
               </div>
             </div>
 
@@ -613,7 +495,7 @@ export default function CapitalPage() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="ابحث باسم المستثمر أو العملة..."
+                    placeholder="ابحث بالحركة أو الملاحظات أو الصندوق..."
                     className="ep-input pr-10"
                   />
                   <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -621,249 +503,153 @@ export default function CapitalPage() {
               </label>
             </div>
 
-            {loading ? (
+            {transactionsLoading ? (
               <div className="space-y-2 p-4 sm:p-5">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="ep-skeleton h-14" />
                 ))}
               </div>
-            ) : filteredAccounts.length === 0 ? (
+            ) : filteredTransactions.length === 0 ? (
               <div className="p-6 sm:p-8">
                 <EmptyState
-                  icon={PiggyBank}
-                  title="لا توجد حسابات رأس مال"
-                  description="أضف رأس مال خاص أو رأس مال استثماري حتى يظهر هنا"
+                  icon={Wallet}
+                  title="لا توجد حركات رأس مال"
+                  description="ابدأ بإيداع رأس مال حتى تظهر الحركات هنا"
                   action={
-                    canCreateAccount ? (
-                      <button type="button" onClick={openAccountModal} className="ep-btn ep-btn-primary">
-                        <Plus className="h-4 w-4" />
-                        إضافة رأس مال
-                      </button>
-                    ) : null
+                    <button type="button" onClick={() => openAction("deposit")} className="ep-btn ep-btn-primary">
+                      <Plus className="h-4 w-4" />
+                      إيداع رأس مال
+                    </button>
                   }
                 />
               </div>
             ) : (
-              <div className="max-w-full overflow-x-auto">
-                <table className="ep-table min-w-[1100px]">
-                  <thead>
-                    <tr>
-                      <th>الاسم</th>
-                      <th>النوع</th>
-                      <th>الرصيد الحالي</th>
-                      <th>المتاح</th>
-                      <th>داخل الصناديق</th>
-                      <th>العملة</th>
-                      <th>آخر حركة</th>
-                      <th>الإجراءات</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {filteredAccounts.map((account) => (
-                      <tr key={account.id}>
-                        <td className="font-black text-slate-900">{account.name}</td>
-                        <td>
-                          <Badge color={accountTypeColor(account.type)}>
-                            {getCapitalAccountTypeLabel(account.type)}
-                          </Badge>
-                        </td>
-                        <td dir="ltr" className="font-mono font-black text-slate-900">
-                          {money(account.current_balance, account.currency)}
-                        </td>
-                        <td dir="ltr" className="font-mono font-bold text-emerald-700">
-                          {money(account.unallocated_balance, account.currency)}
-                        </td>
-                        <td dir="ltr" className="font-mono font-bold text-amber-700">
-                          {money(account.allocated_balance, account.currency)}
-                        </td>
-                        <td>{account.currency}</td>
-                        <td>{account.last_movement_date ? formatDate(account.last_movement_date) : "—"}</td>
-                        <td>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {canCreateMovementPermission && (
-                              <>
-                                <ActionButton
-                                  icon={Plus}
-                                  label="إضافة أموال"
-                                  color="emerald"
-                                  onClick={() => openMovementModal(account, "top_up")}
-                                />
-                                <ActionButton
-                                  icon={Minus}
-                                  label="سحب أموال"
-                                  color="rose"
-                                  onClick={() => openMovementModal(account, "withdrawal")}
-                                />
-                              </>
-                            )}
-                            <ActionButton
-                              icon={Eye}
-                              label="عرض التفاصيل"
-                              color="teal"
-                              onClick={() => loadDetails(account)}
-                            />
-                          </div>
-                        </td>
+              <>
+                <div className="max-w-full overflow-x-auto">
+                  <table className="ep-table min-w-[900px]">
+                    <thead>
+                      <tr>
+                        <th>الحركة</th>
+                        <th>المبلغ</th>
+                        <th>قبل</th>
+                        <th>بعد</th>
+                        <th>الصندوق</th>
+                        <th>التاريخ</th>
+                        <th>ملاحظات</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+
+                    <tbody>
+                      {filteredTransactions.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <Badge color={getTransactionBadgeColor(item.type)}>
+                              {getTransactionTypeLabel(item.type)}
+                            </Badge>
+                          </td>
+
+                          <td dir="ltr" className={`font-mono font-black ${getAmountClass(item.amount)}`}>
+                            {formatMoney(Number(item.amount || 0))}
+                          </td>
+
+                          <td dir="ltr" className="font-mono font-bold text-slate-700">
+                            {formatMoney(Number(item.balance_before || 0))}
+                          </td>
+
+                          <td dir="ltr" className="font-mono font-bold text-slate-700">
+                            {formatMoney(Number(item.balance_after || 0))}
+                          </td>
+
+                          <td>{item.box ? getBoxLabel(item.box) : "—"}</td>
+
+                          <td>{item.transaction_date ? formatDate(item.transaction_date) : "—"}</td>
+
+                          <td className="max-w-[260px] truncate">{item.notes || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="border-t border-slate-100">
+                  <Pagination
+                    current={meta.current_page || page}
+                    last={meta.last_page || 1}
+                    total={meta.total || filteredTransactions.length}
+                    perPage={meta.per_page || PER_PAGE}
+                    onChange={setPage}
+                  />
+                </div>
+              </>
             )}
           </section>
         </>
       )}
 
       <Modal
-        open={accountModalOpen}
-        onClose={() => !busy && setAccountModalOpen(false)}
-        title="إضافة رأس مال"
-        subtitle="اختر رأس مال خاص أو رأس مال استثماري"
-        icon={Plus}
+        open={!!actionType}
+        onClose={closeAction}
+        title={activeAction?.title || ""}
+        subtitle={activeAction?.subtitle || ""}
+        icon={activeAction?.icon || Wallet}
         size="md"
       >
-        <AccountForm
-          form={accountForm}
-          setForm={setAccountForm}
-          errors={accountErrors}
+        <CapitalForm
+          actionType={actionType}
+          form={form}
+          setForm={setForm}
+          boxes={boxes}
+          errors={formErrors}
           loading={busy}
-          onSubmit={submitAccount}
-          onCancel={() => setAccountModalOpen(false)}
+          onSubmit={submitAction}
+          onCancel={closeAction}
         />
-      </Modal>
-
-      <Modal
-        open={!!movementAccount}
-        onClose={() => !busy && setMovementAccount(null)}
-        title={movementForm.type === "withdrawal" ? "سحب أموال" : "إضافة أموال"}
-        subtitle={movementAccount?.name}
-        icon={movementForm.type === "withdrawal" ? Minus : Plus}
-        size="md"
-      >
-        <MovementForm
-          form={movementForm}
-          setForm={setMovementForm}
-          account={movementAccount}
-          errors={movementErrors}
-          loading={busy}
-          onSubmit={submitMovement}
-          onCancel={() => setMovementAccount(null)}
-        />
-      </Modal>
-
-      <Modal
-        open={detailsOpen}
-        onClose={() => !busy && setDetailsOpen(false)}
-        title={details?.account?.name || "كشف حساب رأس المال"}
-        subtitle={details?.account ? getCapitalAccountTypeLabel(details.account.type) : ""}
-        icon={Eye}
-        size="xl"
-      >
-        <AccountDetails
-          details={details}
-          loading={detailsLoading}
-          canCreate={canCreateMovementPermission}
-          canUpdate={canUpdateMovementPermission}
-          canDelete={canDeleteMovementPermission}
-          onAdd={(account) => openMovementModal(account, "top_up")}
-          onWithdraw={(account) => openMovementModal(account, "withdrawal")}
-          onEdit={openEditMovement}
-          onDelete={requestDeleteMovement}
-        />
-      </Modal>
-
-      <Modal
-        open={!!editMovement}
-        onClose={() => !busy && setEditMovement(null)}
-        title="تعديل حركة رأس مال"
-        subtitle="سيتم إعادة احتساب الرصيد بعد الحفظ"
-        icon={Edit2}
-        size="md"
-      >
-        <EditMovementForm
-          form={editForm}
-          setForm={setEditForm}
-          movement={editMovement}
-          errors={editErrors}
-          loading={busy}
-          onSubmit={submitEdit}
-          onCancel={() => setEditMovement(null)}
-        />
-      </Modal>
-
-      <Modal
-        open={!!pending}
-        onClose={() => !busy && setPending(null)}
-        title="تأكيد الحركة المالية"
-        subtitle="سيتم تحديث الرصيد من الباكند بعد التنفيذ"
-        icon={FileText}
-        size="sm"
-      >
-        <div className="space-y-4 text-right">
-          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold leading-7 text-amber-900">
-            {pending?.message}
-          </p>
-
-          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-start">
-            <button type="button" onClick={() => setPending(null)} disabled={busy} className="ep-btn ep-btn-ghost h-11 justify-center">
-              إلغاء
-            </button>
-            <button type="button" onClick={confirmPending} disabled={busy} className="ep-btn ep-btn-primary h-11 justify-center">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              تأكيد
-            </button>
-          </div>
-        </div>
       </Modal>
     </div>
   );
 }
 
-function ActionButton({ icon: Icon, label, color, onClick, disabled = false }) {
-  const colors = {
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-    rose: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
-    teal: "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100",
-    slate: "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+function InfoBox({ label, value, color }) {
+  const colorMap = {
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    teal: "border-teal-200 bg-teal-50 text-teal-800",
+    violet: "border-violet-200 bg-violet-50 text-violet-800",
   };
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${colors[color] || colors.slate}`}
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </button>
+    <div className={`rounded-2xl border p-4 text-right ${colorMap[color] || colorMap.teal}`}>
+      <p className="text-xs font-black opacity-75">{label}</p>
+      <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
+        ${formatMoney(Number(value || 0))}
+      </p>
+    </div>
   );
 }
 
-function AccountForm({ form, setForm, errors, loading, onSubmit, onCancel }) {
+function CapitalForm({ actionType, form, setForm, boxes, errors, loading, onSubmit, onCancel }) {
   function update(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <Field label="نوع رأس المال" required error={errors.type}>
-        <select value={form.type} onChange={(e) => update("type", e.target.value)} className="ep-input appearance-none">
-          <option value="own">رأس مالي الخاص</option>
-          <option value="investor">رأس مال استثماري</option>
-        </select>
-      </Field>
-
-      {form.type === "investor" && (
-        <Field label="المستثمر / الشركة" required error={errors.name}>
-          <input
-            value={form.name}
-            onChange={(e) => update("name", e.target.value)}
-            placeholder="مثال: محل ذهب"
-            className="ep-input"
-          />
+      {actionType === "transfer" && (
+        <Field label="الصندوق" required error={errors.box_id}>
+          <select
+            value={form.box_id}
+            onChange={(e) => update("box_id", e.target.value)}
+            className="ep-input appearance-none"
+          >
+            <option value="">اختر الصندوق...</option>
+            {boxes.map((box) => (
+              <option key={box.id} value={box.id}>
+                {box.name || `#${box.id}`}
+              </option>
+            ))}
+          </select>
         </Field>
       )}
 
@@ -881,253 +667,56 @@ function AccountForm({ form, setForm, errors, loading, onSubmit, onCancel }) {
           />
         </Field>
 
-        <Field label="العملة" required error={errors.currency}>
-          <input value={form.currency} onChange={(e) => update("currency", e.target.value.toUpperCase())} className="ep-input" />
-        </Field>
-
         <Field label="تاريخ الحركة" required error={errors.transaction_date}>
-          <input type="date" value={form.transaction_date} onChange={(e) => update("transaction_date", e.target.value)} className="ep-input" />
-        </Field>
-
-        <Field label="رقم المرجع" error={errors.reference_number}>
-          <input value={form.reference_number} onChange={(e) => update("reference_number", e.target.value)} className="ep-input" />
-        </Field>
-      </div>
-
-      <Field label="الملاحظة" error={errors.notes || errors.statement}>
-        <textarea
-          value={form.notes}
-          onChange={(e) => update("notes", e.target.value)}
-          rows={3}
-          placeholder="استثمار أولي، زيادة رأس المال..."
-          className="ep-input resize-none py-3"
-          style={{ height: "auto" }}
-        />
-      </Field>
-
-      <FormActions loading={loading} onCancel={onCancel} />
-    </form>
-  );
-}
-
-function MovementForm({ form, setForm, account, errors, loading, onSubmit, onCancel }) {
-  function update(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-        <p className="text-xs font-bold text-slate-500">الحساب</p>
-        <p className="mt-1 font-black text-slate-900">{account?.name}</p>
-        <p dir="ltr" className="mt-1 font-mono text-sm font-bold text-slate-600">
-          {money(account?.current_balance, account?.currency)}
-        </p>
-      </div>
-
-      <Field label="نوع الحركة" required error={errors.type}>
-        <select value={form.type} onChange={(e) => update("type", e.target.value)} className="ep-input appearance-none">
-          <option value="top_up">إضافة</option>
-          <option value="withdrawal">سحب</option>
-        </select>
-      </Field>
-
-      <MovementFields form={form} setForm={setForm} currency={account?.currency} errors={errors} />
-
-      <FormActions loading={loading} onCancel={onCancel} />
-    </form>
-  );
-}
-
-function EditMovementForm({ form, setForm, movement, errors, loading, onSubmit, onCancel }) {
-  return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold leading-7 text-amber-900">
-        سيتم إعادة احتساب الأثر المالي للحركة بعد التعديل.
-      </div>
-
-      <MovementFields form={form} setForm={setForm} currency={movement?.currency} errors={errors} />
-
-      <FormActions loading={loading} onCancel={onCancel} />
-    </form>
-  );
-}
-
-function MovementFields({ form, setForm, currency, errors }) {
-  function update(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  return (
-    <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Field label={`المبلغ (${currency || "USD"})`} required error={errors.amount}>
           <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.amount}
-            onChange={(e) => update("amount", e.target.value)}
-            placeholder="0.00"
-            inputMode="decimal"
+            type="date"
+            value={form.transaction_date}
+            onChange={(e) => update("transaction_date", e.target.value)}
             className="ep-input"
           />
         </Field>
-
-        <Field label="تاريخ الحركة" required error={errors.transaction_date}>
-          <input type="date" value={form.transaction_date} onChange={(e) => update("transaction_date", e.target.value)} className="ep-input" />
-        </Field>
-
-        <Field label="رقم المرجع" error={errors.reference_number}>
-          <input value={form.reference_number} onChange={(e) => update("reference_number", e.target.value)} className="ep-input" />
-        </Field>
       </div>
 
-      <Field label="الملاحظة" error={errors.notes || errors.statement}>
+      <Field label="ملاحظات" error={errors.notes}>
         <textarea
           value={form.notes}
           onChange={(e) => update("notes", e.target.value)}
           rows={3}
-          placeholder="الملاحظة أو البيان..."
+          placeholder="ملاحظات اختيارية..."
           className="ep-input resize-none py-3"
           style={{ height: "auto" }}
         />
       </Field>
-    </>
-  );
-}
 
-function AccountDetails({ details, loading, canCreate, canUpdate, canDelete, onAdd, onWithdraw, onEdit, onDelete }) {
-  const account = details?.account;
-  const movements = Array.isArray(details?.movements) ? details.movements : [];
-
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="ep-skeleton h-14" />
-        ))}
-      </div>
-    );
-  }
-
-  if (!account) {
-    return <EmptyState icon={FileText} title="لا توجد بيانات" description="تعذّر تحميل كشف الحساب" />;
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-right md:col-span-2">
-          <Badge color={accountTypeColor(account.type)}>{getCapitalAccountTypeLabel(account.type)}</Badge>
-          <h3 className="mt-3 text-lg font-black text-slate-950">{account.name}</h3>
-          <p className="mt-1 text-xs font-bold text-slate-500">سجل الحركات الخاص بهذا الحساب فقط</p>
-        </div>
-
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-right text-emerald-900">
-          <p className="text-xs font-black opacity-75">الرصيد الحالي</p>
-          <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
-            {money(account.current_balance, account.currency)}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-right text-teal-900">
-          <p className="text-xs font-black opacity-75">المتاح</p>
-          <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
-            {money(account.unallocated_balance, account.currency)}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-right text-amber-900">
-          <p className="text-xs font-black opacity-75">داخل الصناديق</p>
-          <p dir="ltr" className="mt-2 truncate font-mono text-2xl font-black">
-            {money(account.allocated_balance, account.currency)}
-          </p>
-        </div>
-      </div>
-
-      {canCreate && (
-        <div className="flex flex-wrap gap-2">
-          <ActionButton icon={Plus} label="إضافة أموال" color="emerald" onClick={() => onAdd(account)} />
-          <ActionButton icon={Minus} label="سحب أموال" color="rose" onClick={() => onWithdraw(account)} />
+      {errors.amount && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+          {errors.amount}
         </div>
       )}
 
-      {movements.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="لا توجد حركات" description="لم تسجل أي حركة على هذا الحساب بعد" />
-      ) : (
-        <div className="max-w-full overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="ep-table min-w-[900px]">
-            <thead>
-              <tr>
-                <th>التاريخ</th>
-                <th>الحركة</th>
-                <th>المبلغ</th>
-                <th>الرصيد بعد الحركة</th>
-                <th>الملاحظة</th>
-                <th>أنشأها</th>
-                <th>الإجراءات</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {movements.map((movement) => {
-                const meta = getCapitalMovementMeta(movement.type);
-                const editable = canEditMovement(movement.type);
-
-                return (
-                  <tr key={movement.id}>
-                    <td>{movement.transaction_date ? formatDate(movement.transaction_date) : "—"}</td>
-                    <td>
-                      <Badge color={meta.color}>{meta.label}</Badge>
-                    </td>
-                    <td dir="ltr" className={`font-mono font-black ${movementAmountClass(movement.amount)}`}>
-                      {movementSign(movement.amount)}
-                      {money(movement.amount, movement.currency)}
-                    </td>
-                    <td dir="ltr" className="font-mono font-bold text-slate-700">
-                      {money(movement.balance_after, movement.currency)}
-                    </td>
-                    <td className="max-w-[260px] truncate">{movement.notes || movement.statement || "—"}</td>
-                    <td>{userLabel(movement.created_by)}</td>
-                    <td>
-                      <div className="flex flex-wrap gap-2">
-                        {canUpdate && editable && (
-                          <ActionButton icon={Edit2} label="تعديل" color="slate" onClick={() => onEdit(movement)} />
-                        )}
-                        {canDelete && editable && (
-                          <ActionButton icon={Trash2} label="حذف" color="rose" onClick={() => onDelete(movement)} />
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {errors.box_id && String(errors.box_id).includes("غير موجودة") && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+          الصندوق المختار غير موجود. اختر صندوقاً من القائمة.
         </div>
       )}
-    </div>
-  );
-}
 
-function FormActions({ loading, onCancel }) {
-  return (
-    <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-start">
-      <button type="button" onClick={onCancel} disabled={loading} className="ep-btn ep-btn-ghost h-11 justify-center">
-        إلغاء
-      </button>
-      <button type="submit" disabled={loading} className="ep-btn ep-btn-primary h-11 justify-center">
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-        حفظ
-      </button>
-    </div>
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-start">
+        <button type="button" onClick={onCancel} disabled={loading} className="ep-btn ep-btn-ghost h-11 justify-center">
+          إلغاء
+        </button>
+
+        <button type="submit" disabled={loading} className="ep-btn ep-btn-primary h-11 justify-center">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          حفظ
+        </button>
+      </div>
+    </form>
   );
 }
 
 function Field({ label, required, error, children }) {
   return (
-    <label className="block min-w-0 text-right">
+    <label className="block min-w-0">
       <span className="mb-1.5 block text-xs font-bold text-slate-700">
         {label} {required && <span className="text-rose-500">*</span>}
       </span>

@@ -150,10 +150,10 @@ function friendlyCustomerFieldError(field, message) {
     }
 
     if (text.includes("required") || text.includes("مطلوب") || text.includes("فارغ")) {
-      return "الرجاء إدخال كود العميل";
+      return "الرجاء إدخال رقم العميل";
     }
 
-    return "تحقق من كود العميل";
+    return "تحقق من رقم العميل";
   }
 
   if (field === "name") {
@@ -476,44 +476,43 @@ function CustomersPage() {
 
     (async () => {
       try {
-        const legacyTransactionsPromise =
-          typeof customersService.transactions === "function"
-            ? customersService.transactions(selectedId, { per_page: 6 }).catch(() => null)
-            : Promise.resolve(null);
+        // GET /api/v1/customers/{id}/operations is the single source of truth
+        // for: opening_balance_usd, current_balance_usd, and operations[]
+        const operationsRes =
+          typeof customersService.operations === "function"
+            ? await customersService.operations(selectedId).catch(() => null)
+            : null;
 
-        const operationsPromise =
-          typeof operationsService.list === "function"
-            ? operationsService.list({ customer_id: selectedId, per_page: 6 }).catch(() => null)
-            : Promise.resolve(null);
-
-        const [customerRes, balanceRes, legacyTransactionsRes, operationsRes] = await Promise.all([
-          customersService.show(selectedId).catch(() => null),
-          customersService.balance(selectedId).catch(() => null),
-          legacyTransactionsPromise,
-          operationsPromise,
-        ]);
+        const customerRes = await customersService.show(selectedId).catch(() => null);
 
         if (cancelled) return;
 
-        const legacyTransactions = getListItems(legacyTransactionsRes);
+        // Extract operations[] directly from endpoint response
+        let rawOperations = [];
+        if (operationsRes && Array.isArray(operationsRes.operations)) {
+          rawOperations = operationsRes.operations;
+        } else if (operationsRes) {
+          rawOperations = getListItems(operationsRes);
+        }
 
-        const operations = getListItems(operationsRes).filter((operation) => {
-          const operationCustomerId = getOperationCustomerId(operation);
+        // Pluck balance fields directly from the operations endpoint response
+        const openingBalanceUsd = operationsRes?.opening_balance_usd ?? null;
+        const currentBalanceUsd = operationsRes?.current_balance_usd ?? null;
 
-          if (!operationCustomerId) return true;
-
-          return String(operationCustomerId) === String(selectedId);
-        });
-
-        const mergedTransactions = [...operations, ...legacyTransactions]
-          .filter(Boolean)
-          .sort((a, b) => getOperationSortDate(b) - getOperationSortDate(a))
-          .slice(0, 6);
+        let customerData = customerRes?.data ?? customerRes ?? null;
+        if (customerData) {
+          // Attach endpoint-provided balances directly onto customer object
+          customerData = {
+            ...customerData,
+            opening_balance_usd: openingBalanceUsd,
+            current_balance_usd: currentBalanceUsd,
+          };
+        }
 
         setSelectedData({
-          customer: customerRes?.data ?? customerRes ?? null,
-          balance: normalizeBalance(balanceRes),
-          transactions: mergedTransactions,
+          customer: customerData,
+          balance: currentBalanceUsd ?? 0,
+          transactions: rawOperations,
         });
       } finally {
         if (!cancelled) setSelectedLoading(false);
@@ -780,7 +779,7 @@ function CustomersPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="ابحث بالاسم أو كود العميل..."
+                placeholder="ابحث بالاسم أو رقم العميل..."
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white pr-10 pl-4 text-right text-sm font-bold text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10"
               />
             </div>
@@ -801,7 +800,7 @@ function CustomersPage() {
             <EmptyState
               icon={UsersRound}
               title="لا توجد بيانات"
-              description="لم يتم العثور على عملاء أو موردين مطابقين للبحث أو الفلاتر"
+              description="لم يتم العثور على عملاء أو تجار مطابقين للبحث أو الفلاتر"
             />
           ) : (
             <>
@@ -810,7 +809,7 @@ function CustomersPage() {
                   <thead>
                     <tr>
                       <th className="text-right">العميل</th>
-                      <th className="text-right">كود العميل</th>
+                      <th className="text-right">رقم العميل</th>
                       <th className="text-right">التصنيف</th>
                       <th className="text-right">الرصيد</th>
                       <th className="text-right">الحالة</th>
@@ -1373,10 +1372,8 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
             <div className="mt-3 grid grid-cols-2 gap-2">
               <ProfileTile label="التصنيف" value={typeMeta.label} icon={typeMeta.icon} />
               <ProfileTile label="تاريخ التسجيل" value={formatDate(customer.created_at)} icon={CalendarDays} />
-              <ProfileTile label="كود العميل" value={customer.customer_code || `#${customer.id}`} icon={MoreHorizontal} />
-              <ProfileTile label="الرصيد الحالي" value={`${formatMoney(data.balance || 0)} USD`} icon={Wallet} />
-              {customer.phone && <ProfileTile label="الهاتف" value={customer.phone} icon={MoreHorizontal} />}
-              {customer.country && <ProfileTile label="الدولة" value={customer.country} icon={MoreHorizontal} />}
+              <ProfileTile label="رقم العميل" value={customer.customer_code || `#${customer.id}`} icon={MoreHorizontal} />
+              <ProfileTile label="الرصيد الابتدائي" value={`${formatMoney(customer.opening_balance_usd ?? 0)} USD`} icon={Wallet} />
             </div>
           </section>
 
@@ -1387,7 +1384,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
               <MiniStat label="عدد المعاملات" value={transactions.length} icon={ArrowRightLeft} color="violet" />
               <MiniStat label="إجمالي التعاملات" value={`${formatMoney(totalAmount)} USD`} icon={ArrowUpRight} color="emerald" />
               <MiniStat label="إجمالي العمولة" value={`${formatMoney(totalCommission)} USD`} icon={ArrowDownLeft} color="rose" />
-              <MiniStat label="الرصيد الحالي" value={`${formatMoney(data.balance || 0)} USD`} icon={Wallet} color="teal" />
+              <MiniStat label="الرصيد الحالي" value={`${formatMoney(customer.current_balance_usd ?? 0)} USD`} icon={Wallet} color="teal" />
             </div>
           </section>
         </div>
@@ -1448,6 +1445,7 @@ function CustomerDetailPanel({ data, loading, onClose, onEdit, onDelete, onResto
 
                         <td dir="ltr" className="font-mono text-xs font-black text-slate-900">
                           {formatMoney(amount)} {currency}
+                          {transaction.customer_amount_usd && <span className="block text-slate-500 font-normal">≈ ${formatMoney(transaction.customer_amount_usd)}</span>}
                         </td>
 
                         <td dir="ltr" className="font-mono text-xs font-black text-slate-700">
@@ -1512,12 +1510,9 @@ function ProfileTile({ label, value, icon: Icon }) {
 function CustomerForm({ initial, onSubmit, loading, errors = {}, onClearError, onCancel }) {
   const [form, setForm] = useState(() => ({
     name: initial?.name || "",
-    phone: initial?.phone || "",
     customer_code: initial?.customer_code || "",
     type: initial?.type || "customer",
-    category: initial?.category || "regular",
     balance_usd: initial?.balance_usd || "",
-    country: initial?.country || "",
     note: initial?.note || "",
     is_active: initial?.is_active !== false,
   }));
@@ -1532,12 +1527,8 @@ function CustomerForm({ initial, onSubmit, loading, errors = {}, onClearError, o
 
     onSubmit({
       name: String(form.name || "").trim(),
-      phone: String(form.phone || "").trim() || null,
-      customer_code: String(form.customer_code || "").trim() || null,
       type: form.type,
-      category: form.category || "regular",
       balance_usd: Number(form.balance_usd || 0),
-      country: String(form.country || "").trim() || null,
       note: String(form.note || "").trim() || null,
       is_active: Boolean(form.is_active),
     });
@@ -1555,46 +1546,19 @@ function CustomerForm({ initial, onSubmit, loading, errors = {}, onClearError, o
           />
         </FormField>
 
-        <FormField label="كود العميل" error={errors.customer_code}>
+        <FormField label="رقم العميل" error={errors.customer_code}>
           <input
             value={form.customer_code}
-            onChange={(e) => update("customer_code", e.target.value)}
-            className="ep-input"
-            placeholder="مثال: 3327"
-          />
-        </FormField>
-
-        <FormField label="الهاتف" error={errors.phone}>
-          <input
-            value={form.phone}
-            onChange={(e) => update("phone", e.target.value)}
-            className="ep-input"
-            placeholder="+970..."
-          />
-        </FormField>
-
-        <FormField label="الدولة" error={errors.country}>
-          <input
-            value={form.country}
-            onChange={(e) => update("country", e.target.value)}
-            className="ep-input"
-            placeholder="الدولة"
+            disabled
+            className="ep-input bg-slate-50 opacity-60 cursor-not-allowed"
+            placeholder="تلقائي من النظام"
           />
         </FormField>
 
         <FormField label="التصنيف" error={errors.type}>
           <select value={form.type} onChange={(e) => update("type", e.target.value)} className="ep-input">
             <option value="customer">عميل</option>
-            <option value="supplier">مورد</option>
-          </select>
-        </FormField>
-
-        <FormField label="الفئة" error={errors.category}>
-          <select value={form.category} onChange={(e) => update("category", e.target.value)} className="ep-input">
-            <option value="regular">regular</option>
-            <option value="vip">vip</option>
-            <option value="agent">agent</option>
-            <option value="company">company</option>
+            <option value="supplier">تاجر</option>
           </select>
         </FormField>
 

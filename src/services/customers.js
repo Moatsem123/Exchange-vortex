@@ -11,6 +11,8 @@ const customersService = {
   balance: (id) => api.get(`/customers/${id}/balance`).then((r) => r.data),
   transactions: (id, params = {}) =>
     api.get(`/customers/${id}/transactions`, { params }).then((r) => r.data),
+  operations: (id, params = {}) =>
+    api.get(`/customers/${id}/operations`, { params }).then((r) => r.data),
   suppliers: (params = {}) =>
     api.get("/customers", { params: { ...params, type: "supplier" } }).then((r) => r.data),
   regularCustomers: (params = {}) =>

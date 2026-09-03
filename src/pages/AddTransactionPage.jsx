@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   BadgePlus,
+  ArrowRightLeft,
   Check,
   Calculator,
   Save,
@@ -22,28 +23,27 @@ import customersService from "../services/customers";
 import currenciesService from "../services/currencies";
 import boxesService from "../services/boxes";
 import { extractApiError, formatMoney, unwrapList } from "../shared/helpers";
-import { BOX_TYPE_OPTIONS, getBoxTypeLabel } from "../shared/boxTypes";
-import {
-  COMMISSION_PAYER_OPTIONS,
-  getCommissionPayerMeta,
-  getSupplierDirectionMeta,
-  SUPPLIER_DIRECTION_OPTIONS,
-} from "../shared/operationWorkflow";
 
 const PAGE_TYPES = [
   {
     key: "operation",
-    label: "عملية",
-    desc: "عملية تحويل بين العميل والمورد أو الصندوق",
+    label: "عمليات",
+    desc: "عملية تحويل حسب مصدر الأموال",
     icon: BadgePlus,
+  },
+  {
+    key: "transfer",
+    label: "تحويل بين حسابات النظام",
+    desc: "تحويل مبلغ بين صناديق داخل النظام",
+    icon: ArrowRightLeft,
   },
 ];
 
 const FUNDING_TYPES = [
   {
     key: "supplier",
-    label: "عملية مورد",
-    desc: "عملية بين مورد وعميل باتجاه مالي محدد",
+    label: "تاجر",
+    desc: "مصدر الأموال من تاجر",
     icon: Building2,
   },
   {
@@ -54,13 +54,24 @@ const FUNDING_TYPES = [
   },
 ];
 
-const STATUS_OPTIONS = [
-  { value: "pending", label: "معلقة" },
-  { value: "completed", label: "مكتملة" },
+const BOX_TYPE_OPTIONS = [
+  { value: "turkish", label: "صناديق تركيا", hint: "TRY" },
+  { value: "local_bank_wallet", label: "البنوك والمحافظ الرقمية", hint: "ILS / USD" },
+  { value: "usdt_wallet", label: "المحافظ الإلكترونية", hint: "USDT" },
 ];
 
+const STATUS_OPTIONS = [
+  { value: "pending", label: "قيد التنفيذ" },
+  { value: "completed", label: "مكتملة" },
+  { value: "cancelled", label: "ملغاة" },
+];
+
+function getBoxTypeLabel(type) {
+  return BOX_TYPE_OPTIONS.find((item) => item.value === type)?.label || "كل الصناديق";
+}
+
 function getStatusLabel(status) {
-  return STATUS_OPTIONS.find((item) => item.value === status)?.label || "معلقة";
+  return STATUS_OPTIONS.find((item) => item.value === status)?.label || "قيد التنفيذ";
 }
 
 function normalizeList(res) {
@@ -78,9 +89,10 @@ function numberValue(value) {
 
 function AddTransactionPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const toast = useToast();
 
-  const [pageType, setPageType] = useState("operation");
+  const [pageType, setPageType] = useState(params.get("type") || "operation");
   const [fundingSource, setFundingSource] = useState("supplier");
 
   const [customerId, setCustomerId] = useState(null);
@@ -123,18 +135,12 @@ function AddTransactionPage() {
   const [transferAmount, setTransferAmount] = useState("");
   const [transferExchangeRate, setTransferExchangeRate] = useState("1.0000");
 
-  const [referenceNumber, setReferenceNumber] = useState("");
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split("T")[0]);
   const [transactionTime, setTransactionTime] = useState(new Date().toTimeString().slice(0, 5));
-  const [operationStatus, setOperationStatus] = useState("pending");
-  const [supplierDirection, setSupplierDirection] = useState("supplier_pays_intermediary");
 
   const [commissionMode, setCommissionMode] = useState("none");
   const [commissionType, setCommissionType] = useState("percentage");
   const [commissionValue, setCommissionValue] = useState("");
-  const [commissionPayer, setCommissionPayer] = useState("customer");
-  const [customerCommissionAmount, setCustomerCommissionAmount] = useState("");
-  const [supplierCommissionAmount, setSupplierCommissionAmount] = useState("");
 
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
@@ -247,7 +253,6 @@ function AddTransactionPage() {
   const activeAmount = isTransfer ? transferAmount : customerAmount;
   const activeCurrency = isTransfer ? transferCurrency : customerCurrency;
   const activeExchangeRate = isTransfer ? transferExchangeRate : customerExchangeRate;
-  const effectiveCommissionPayer = commissionMode === "none" || !isSupplierFunding ? "customer" : commissionPayer;
 
   const sourceAmount = useMemo(() => {
     if (isTransfer) return transferAmount;
@@ -255,6 +260,13 @@ function AddTransactionPage() {
     if (isBoxFunding) return boxAmount;
     return "";
   }, [isTransfer, isSupplierFunding, isBoxFunding, transferAmount, supplierAmount, boxAmount]);
+
+  const sourceCurrency = useMemo(() => {
+    if (isTransfer) return transferCurrency;
+    if (isSupplierFunding) return supplierCurrency;
+    if (isBoxFunding) return boxCurrency;
+    return activeCurrency;
+  }, [isTransfer, isSupplierFunding, isBoxFunding, transferCurrency, supplierCurrency, boxCurrency, activeCurrency]);
 
   const computed = useMemo(() => {
     const parsedAmount = numberValue(activeAmount);
@@ -270,51 +282,18 @@ function AddTransactionPage() {
           : parsedCommission;
     }
 
-    const customerCommission =
-      commissionMode !== "apply"
-        ? 0
-        : effectiveCommissionPayer === "supplier"
-          ? 0
-          : effectiveCommissionPayer === "both"
-            ? numberValue(customerCommissionAmount)
-            : commissionAmount;
-    const supplierCommission =
-      commissionMode !== "apply"
-        ? 0
-        : effectiveCommissionPayer === "supplier"
-          ? commissionAmount
-          : effectiveCommissionPayer === "both"
-            ? numberValue(supplierCommissionAmount)
-            : 0;
-    const final = Math.max(parsedAmount - customerCommission, 0);
+    const final = Math.max(parsedAmount - commissionAmount, 0);
     const usd = final / parsedRate;
 
     return {
       baseAmount: parsedAmount,
       sourceAmount: numberValue(sourceAmount),
       commissionAmount,
-      customerCommissionAmount: customerCommission,
-      supplierCommissionAmount: supplierCommission,
       final,
       usd,
       rate: parsedRate,
     };
-  }, [
-    activeAmount,
-    activeExchangeRate,
-    commissionMode,
-    effectiveCommissionPayer,
-    commissionType,
-    commissionValue,
-    customerCommissionAmount,
-    sourceAmount,
-    supplierCommissionAmount,
-  ]);
-
-  const availableCommissionPayers = useMemo(
-    () => COMMISSION_PAYER_OPTIONS.filter((option) => option.value === "customer" || isSupplierFunding),
-    [isSupplierFunding]
-  );
+  }, [activeAmount, activeExchangeRate, commissionMode, commissionType, commissionValue, sourceAmount]);
 
   function validate() {
     const validationErrors = {};
@@ -331,15 +310,15 @@ function AddTransactionPage() {
       }
 
       if (isSupplierFunding) {
-        if (!supplierId) validationErrors.supplier = "اختر المورد";
-        if (!supplierDirection) validationErrors.supplier_direction = "اختر اتجاه المورد";
+        if (!supplierId) validationErrors.supplier = "اختر التاجر";
+        if (!supplierCurrency) validationErrors.supplier_currency = "اختر عملة التاجر";
 
         if (!supplierAmount || Number(supplierAmount) <= 0) {
-          validationErrors.supplier_amount = "أدخل مبلغ المورد";
+          validationErrors.supplier_amount = "أدخل مبلغ التاجر";
         }
 
         if (!supplierExchangeRate || Number(supplierExchangeRate) <= 0) {
-          validationErrors.supplier_exchange_rate = "أدخل سعر صرف المورد";
+          validationErrors.supplier_exchange_rate = "أدخل سعر صرف التاجر";
         }
       }
 
@@ -381,27 +360,7 @@ function AddTransactionPage() {
         validationErrors.commission = "أدخل قيمة العمولة";
       }
 
-      if (effectiveCommissionPayer !== "customer" && !isSupplierFunding) {
-        validationErrors.commission_payer = "عمولة المورد تحتاج عملية مورد";
-      }
-
-      if (effectiveCommissionPayer === "both") {
-        if (!customerCommissionAmount || Number(customerCommissionAmount) < 0) {
-          validationErrors.customer_commission_amount = "أدخل عمولة العميل";
-        }
-
-        if (!supplierCommissionAmount || Number(supplierCommissionAmount) < 0) {
-          validationErrors.supplier_commission_amount = "أدخل عمولة المورد";
-        }
-
-        const splitTotal = Number(customerCommissionAmount || 0) + Number(supplierCommissionAmount || 0);
-
-        if (Math.abs(splitTotal - computed.commissionAmount) > 0.00009) {
-          validationErrors.commission_split = "مجموع عمولة الطرفين يجب أن يساوي إجمالي العمولة";
-        }
-      }
-
-      if (Number(commissionValue) > 0 && computed.customerCommissionAmount > 0 && computed.final <= 0) {
+      if (Number(commissionValue) > 0 && computed.final <= 0) {
         validationErrors.commission = "العمولة لا يمكن أن تكون أكبر أو تساوي مبلغ العميل";
       }
     }
@@ -415,11 +374,10 @@ function AddTransactionPage() {
 
     if (isTransfer) {
       const mergedNotes = [
-        note || null,
-        referenceNumber ? `REF: ${referenceNumber}` : null,
+        note ? `NOTE: ${note}` : null,
         transactionTime ? `TIME: ${transactionTime}` : null,
         `TYPE: transfer`,
-        `COMMISSION_MODE: ${commissionMode === "none" ? "none" : effectiveCommissionPayer}`,
+        `COMMISSION_MODE: subtract_from_customer`,
         `NET_AFTER_COMMISSION: ${computed.final}`,
         boxType ? `FROM_BOX_TYPE: ${boxType}` : null,
         toBoxType ? `TO_BOX_TYPE: ${toBoxType}` : null,
@@ -440,7 +398,6 @@ function AddTransactionPage() {
         supplier_currency: null,
         supplier_amount: null,
         supplier_exchange_rate: null,
-        supplier_direction: null,
 
         customer_currency: transferCurrency,
         customer_amount: Number(transferAmount),
@@ -448,25 +405,18 @@ function AddTransactionPage() {
 
         commission_type: commissionType,
         commission_rate: commissionNumber,
-        commission_payer: "customer",
-        customer_commission_amount: computed.commissionAmount,
-        supplier_commission_amount: 0,
 
         notes: mergedNotes || null,
       };
     }
 
     const mergedNotes = [
-      note || null,
-      referenceNumber ? `REF: ${referenceNumber}` : null,
+      note ? `NOTE: ${note}` : null,
       transactionTime ? `TIME: ${transactionTime}` : null,
       `TYPE: operation`,
       `FUNDING_SOURCE: ${fundingSource}`,
-      `COMMISSION_MODE: ${commissionMode === "none" ? "none" : effectiveCommissionPayer}`,
+      `COMMISSION_MODE: subtract_from_customer`,
       `NET_AFTER_COMMISSION: ${computed.final}`,
-      commissionMode === "apply" ? `CUSTOMER_COMMISSION: ${computed.customerCommissionAmount}` : null,
-      commissionMode === "apply" ? `SUPPLIER_COMMISSION: ${computed.supplierCommissionAmount}` : null,
-      isSupplierFunding && supplierDirection ? `SUPPLIER_DIRECTION: ${supplierDirection}` : null,
       isBoxFunding && boxType ? `BOX_TYPE: ${boxType}` : null,
       isBoxFunding && boxCurrency ? `BOX_CURRENCY: ${boxCurrency}` : null,
       isBoxFunding && boxAmount ? `BOX_AMOUNT: ${boxAmount}` : null,
@@ -477,7 +427,7 @@ function AddTransactionPage() {
 
     return {
       transaction_date: transactionDate,
-      status: isBoxFunding ? "completed" : operationStatus,
+      ...(isBoxFunding ? {} : { status: "pending" }),
       funding_source: fundingSource,
 
       supplier_id: isSupplierFunding ? Number(supplierId) : null,
@@ -487,17 +437,13 @@ function AddTransactionPage() {
       supplier_currency: isSupplierFunding ? supplierCurrency : null,
       supplier_amount: isSupplierFunding ? Number(supplierAmount) : null,
       supplier_exchange_rate: isSupplierFunding ? Number(supplierExchangeRate) : null,
-      supplier_direction: isSupplierFunding ? supplierDirection : null,
 
       customer_currency: customerCurrency,
       customer_amount: Number(customerAmount),
       customer_exchange_rate: Number(customerExchangeRate),
 
-      commission_type: commissionMode === "none" ? "fixed" : commissionType,
+      commission_type: commissionType,
       commission_rate: commissionNumber,
-      commission_payer: commissionMode === "none" ? "customer" : effectiveCommissionPayer,
-      customer_commission_amount: computed.customerCommissionAmount,
-      supplier_commission_amount: computed.supplierCommissionAmount,
 
       notes: mergedNotes || null,
     };
@@ -554,13 +500,13 @@ function AddTransactionPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="إضافة عملية جديدة"
-        subtitle="أضف عملية تحويل مع بيانات العميل والمورد أو الصندوق"
+        title="إضافة معاملة جديدة"
+        subtitle="أضف معاملة مالية جديدة وقم بتسجيل التفاصيل بدقة"
         icon={BadgePlus}
       />
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <Section title="نوع العملية" subtitle="اختر نوع العملية التي ترغب في تنفيذها">
+        <Section title="نوع المعاملة" subtitle="اختر نوع المعاملة التي ترغب في تنفيذها">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {PAGE_TYPES.map((type) => {
               const Icon = type.icon;
@@ -601,7 +547,7 @@ function AddTransactionPage() {
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
           <div className="space-y-5">
-            <Section title="تفاصيل العملية" subtitle="أدخل بيانات العملية بدقة" icon={FileText}>
+            <Section title="تفاصيل المعاملة" subtitle="أدخل بيانات المعاملة بدقة" icon={FileText}>
               {isOperation ? (
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -629,8 +575,8 @@ function AddTransactionPage() {
                               setSupplierId(null);
                               setSupplierSearch("");
                               setSupplierAmount("");
-                              setSupplierDirection("supplier_pays_intermediary");
-                              setOperationStatus("completed");
+                              // removed operationStatus
+
                               setShowSupplierList(false);
                             }
                           }}
@@ -659,7 +605,15 @@ function AddTransactionPage() {
 
                   {isSupplierFunding ? (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <Field label="المورد" required error={errors.supplier || errors.supplier_id}>
+                      <Field label="التاريخ">
+                        <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
+                      </Field>
+
+                      <Field label="الوقت">
+                        <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
+                      </Field>
+
+                      <Field label="التاجر" required error={errors.supplier || errors.supplier_id}>
                         <SearchDropdown
                           value={selectedSupplier ? selectedSupplier.name : supplierSearch}
                           placeholder="ابحث عن مورد..."
@@ -711,13 +665,7 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <div className="md:col-span-2">
-                        <Field label="اتجاه المورد" required error={errors.supplier_direction}>
-                          <SupplierDirectionPicker value={supplierDirection} onChange={setSupplierDirection} />
-                        </Field>
-                      </div>
-
-                      <Field label="مبلغ المورد" required error={errors.supplier_amount}>
+                      <Field label="مبلغ التاجر" required error={errors.supplier_amount}>
                         <input
                           type="number"
                           step="0.01"
@@ -741,7 +689,7 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="عملة المورد" required error={errors.supplier_currency}>
+                      <Field label="عملة التاجر" required error={errors.supplier_currency}>
                         <CurrencySelect
                           value={supplierCurrency}
                           currencies={currencies}
@@ -763,7 +711,7 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="سعر صرف المورد" required error={errors.supplier_exchange_rate}>
+                      <Field label="سعر صرف التاجر" required error={errors.supplier_exchange_rate}>
                         <input
                           type="number"
                           step="0.0001"
@@ -787,30 +735,17 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="الوقت">
-                        <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
-                      </Field>
-
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <Field label="التاريخ">
                         <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
                       </Field>
 
-                      <Field label="رقم مرجعي">
-                        <input
-                          type="text"
-                          value={referenceNumber}
-                          onChange={(e) => setReferenceNumber(e.target.value)}
-                          placeholder="REF-XXXX"
-                          className="ep-input"
-                        />
+                      <Field label="الوقت">
+                        <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
                       </Field>
 
-                      <Field label="حالة العملية">
-                        <StatusSelect value={operationStatus} onChange={setOperationStatus} />
-                      </Field>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <Field label="نوع الصندوق" required error={errors.box_type}>
                         <BoxTypeSelect
                           value={boxType}
@@ -948,28 +883,19 @@ function AddTransactionPage() {
                         />
                       </Field>
 
-                      <Field label="الوقت">
-                        <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
-                      </Field>
-
-                      <Field label="التاريخ">
-                        <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
-                      </Field>
-
-                      <Field label="رقم مرجعي">
-                        <input
-                          type="text"
-                          value={referenceNumber}
-                          onChange={(e) => setReferenceNumber(e.target.value)}
-                          placeholder="REF-XXXX"
-                          className="ep-input"
-                        />
-                      </Field>
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="التاريخ">
+                    <input type="date" value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} className="ep-input" />
+                  </Field>
+
+                  <Field label="الوقت">
+                    <input type="time" value={transactionTime} onChange={(e) => setTransactionTime(e.target.value)} className="ep-input" />
+                  </Field>
+
                   <Field label="نوع الصندوق المرسل" required error={errors.box_type}>
                     <BoxTypeSelect
                       value={boxType}
@@ -1113,7 +1039,7 @@ function AddTransactionPage() {
               )}
             </Section>
 
-            <Section title="العمولة" subtitle="معاينة فقط، والخادم هو مصدر الحقيقة بعد الحفظ" icon={Percent}>
+            <Section title="العمولة" subtitle="العمولة تخصم من مبلغ العميل في الملخص" icon={Percent}>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { key: "none", label: "بدون عمولة", icon: X },
@@ -1131,9 +1057,6 @@ function AddTransactionPage() {
 
                         if (mode.key === "none") {
                           setCommissionValue("");
-                          setCommissionPayer("customer");
-                          setCustomerCommissionAmount("");
-                          setSupplierCommissionAmount("");
                         }
                       }}
                       className={`flex items-center justify-center gap-2 rounded-xl border-2 p-3 text-sm font-bold transition ${
@@ -1177,71 +1100,6 @@ function AddTransactionPage() {
                       className="ep-input"
                     />
                   </Field>
-
-                  <div className="md:col-span-2">
-                    <Field label="طرف دفع العمولة" error={errors.commission_payer || errors.commission_split}>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        {availableCommissionPayers.map((option) => {
-                          const active = effectiveCommissionPayer === option.value;
-                          const Icon = option.value === "customer" ? UserIcon : option.value === "supplier" ? Building2 : Percent;
-
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => {
-                                setCommissionPayer(option.value);
-
-                                if (option.value !== "both") {
-                                  setCustomerCommissionAmount("");
-                                  setSupplierCommissionAmount("");
-                                }
-                              }}
-                              className={`flex min-h-20 flex-col items-end justify-center gap-1 rounded-xl border-2 px-3 py-2 text-right transition ${
-                                active
-                                  ? "border-teal-500 bg-teal-50/50 text-teal-700"
-                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                              }`}
-                            >
-                              <span className="flex items-center gap-2 text-sm font-black">
-                                <Icon className="h-4 w-4" />
-                                {option.label}
-                              </span>
-                              <span className="text-xs font-bold leading-5 text-slate-500">{option.description}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </Field>
-                  </div>
-
-                  {effectiveCommissionPayer === "both" && (
-                    <>
-                      <Field label={`عمولة العميل ${activeCurrency}`} error={errors.customer_commission_amount}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={customerCommissionAmount}
-                          onChange={(e) => setCustomerCommissionAmount(e.target.value)}
-                          placeholder="0.00"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-
-                      <Field label={`عمولة المورد ${activeCurrency}`} error={errors.supplier_commission_amount}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={supplierCommissionAmount}
-                          onChange={(e) => setSupplierCommissionAmount(e.target.value)}
-                          placeholder="0.00"
-                          inputMode="decimal"
-                          className="ep-input"
-                        />
-                      </Field>
-                    </>
-                  )}
                 </motion.div>
               )}
             </Section>
@@ -1251,137 +1109,166 @@ function AddTransactionPage() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
-                placeholder="أدخل وصفًا مختصرًا للعملية (اختياري)..."
+                placeholder="أدخل وصفًا مختصرًا للمعاملة (اختياري)..."
                 className="ep-input resize-none py-3"
                 style={{ height: "auto" }}
               />
             </Section>
           </div>
 
-          <aside className="space-y-3">
-            <div className="ep-card-static min-w-0 overflow-hidden p-5 lg:sticky lg:top-24">
-              <div className="mb-4 flex items-center justify-between">
-                <Calculator className="h-5 w-5 text-slate-400" />
-
-                <div className="text-right">
-                  <h3 className="text-base font-black text-slate-900">ملخص العملية</h3>
-                  <p className="text-xs text-slate-500">المراجعة قبل الحفظ</p>
+          {/* ─── Right column: live transaction summary ─── */}
+          <aside className="space-y-4 lg:sticky lg:top-5 lg:self-start">
+            <div className="ep-card-static overflow-hidden p-5" dir="rtl">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 text-teal-700">
+                  <Calculator className="h-4 w-4" />
                 </div>
+                <h3 className="flex-1 text-right text-sm font-black text-slate-900">ملخص المعاملة</h3>
               </div>
 
               <div className="space-y-3 text-sm">
-                <SummaryRow label="نوع العملية" value={PAGE_TYPES.find((type) => type.key === pageType)?.label || "—"} />
-                <SummaryRow label="حالة العملية" value={isTransfer || isBoxFunding ? "مكتملة" : getStatusLabel(operationStatus)} />
-
-                {referenceNumber && <SummaryRow label="الرقم المرجعي" value={referenceNumber} />}
-
+                {/* Customer */}
                 {isOperation && (
-                  <SummaryRow label="مصدر الأموال" value={FUNDING_TYPES.find((type) => type.key === fundingSource)?.label || "—"} />
+                  <SummaryRow
+                    label="العميل"
+                    value={selectedCustomer?.name || <span className="text-slate-400 text-xs">لم يُحدد بعد</span>}
+                  />
                 )}
 
-                {isOperation && <SummaryRow label="العميل" value={selectedCustomer?.name || "—"} />}
-                {isOperation && isSupplierFunding && <SummaryRow label="المورد" value={selectedSupplier?.name || "—"} />}
+                {/* Supplier or Box */}
                 {isOperation && isSupplierFunding && (
-                  <SummaryRow label="اتجاه المورد" value={getSupplierDirectionMeta(supplierDirection).label} />
+                  <SummaryRow
+                    label="التاجر"
+                    value={selectedSupplier?.name || <span className="text-slate-400 text-xs">لم يُحدد بعد</span>}
+                  />
                 )}
-
                 {isOperation && isBoxFunding && (
+                  <SummaryRow
+                    label="الصندوق"
+                    value={selectedBox?.name || <span className="text-slate-400 text-xs">لم يُحدد بعد</span>}
+                  />
+                )}
+                {isTransfer && (
                   <>
-                    <SummaryRow label="نوع الصندوق" value={getBoxTypeLabel(boxType)} />
-                    <SummaryRow label="الصندوق" value={selectedBox?.name || "—"} />
+                    <SummaryRow
+                      label="من الصندوق"
+                      value={selectedBox?.name || <span className="text-slate-400 text-xs">لم يُحدد بعد</span>}
+                    />
+                    <SummaryRow
+                      label="إلى الصندوق"
+                      value={selectedToBox?.name || <span className="text-slate-400 text-xs">لم يُحدد بعد</span>}
+                    />
                   </>
                 )}
 
-                {isTransfer && <SummaryRow label="نوع الصندوق المرسل" value={getBoxTypeLabel(boxType)} />}
-                {isTransfer && <SummaryRow label="الصندوق المرسل" value={selectedBox?.name || "—"} />}
-                {isTransfer && <SummaryRow label="نوع الصندوق المستلم" value={getBoxTypeLabel(toBoxType)} />}
-                {isTransfer && <SummaryRow label="الصندوق المستلم" value={selectedToBox?.name || "—"} />}
+                <div className="my-2 border-t border-slate-100" />
 
-                <SummaryRow label="العملة" value={`${currentCur?.symbol || ""} ${activeCurrency}`} />
-
-                <SummaryRow
-                  label={isTransfer ? "المبلغ قبل العمولة" : "مبلغ العميل قبل العمولة"}
-                  value={`${formatMoney(computed.baseAmount)} ${activeCurrency}`}
-                  mono
-                />
-
-                {isOperation && isSupplierFunding && (
-                  <SummaryRow
-                    label="مبلغ المورد"
-                    value={`${formatMoney(numberValue(supplierAmount))} ${supplierCurrency}`}
-                    mono
-                  />
-                )}
-
-                {isOperation && isBoxFunding && (
-                  <SummaryRow
-                    label="مبلغ الصندوق"
-                    value={`${formatMoney(numberValue(boxAmount))} ${boxCurrency}`}
-                    mono
-                  />
-                )}
-
-                <SummaryRow
-                  label="سعر الصرف"
-                  value={formatMoney(computed.rate, { decimals: 4 })}
-                  mono
-                />
-
-                {commissionMode === "apply" && computed.commissionAmount > 0 && (
+                {/* Customer amounts */}
+                {isOperation && (
                   <>
+                    <SummaryRow
+                      label="مبلغ العميل"
+                      value={customerAmount ? `${formatMoney(Number(customerAmount))} ${customerCurrency}` : "—"}
+                      mono
+                    />
+                    <SummaryRow label="عملة العميل" value={customerCurrency || "—"} />
+                    <SummaryRow
+                      label="سعر صرف العميل"
+                      value={customerExchangeRate || "—"}
+                      mono
+                    />
+                  </>
+                )}
+
+                {/* Supplier amounts */}
+                {isOperation && isSupplierFunding && (
+                  <>
+                    <SummaryRow
+                      label="مبلغ التاجر"
+                      value={supplierAmount ? `${formatMoney(Number(supplierAmount))} ${supplierCurrency}` : "—"}
+                      mono
+                    />
+                    <SummaryRow label="عملة التاجر" value={supplierCurrency || "—"} />
+                    <SummaryRow
+                      label="سعر صرف التاجر"
+                      value={supplierExchangeRate || "—"}
+                      mono
+                    />
+                  </>
+                )}
+
+                {/* Box amounts */}
+                {isOperation && isBoxFunding && (
+                  <>
+                    <SummaryRow
+                      label="مبلغ الصندوق"
+                      value={boxAmount ? `${formatMoney(Number(boxAmount))} ${boxCurrency}` : "—"}
+                      mono
+                    />
+                    <SummaryRow label="عملة الصندوق" value={boxCurrency || "—"} />
+                    <SummaryRow
+                      label="سعر صرف الصندوق"
+                      value={boxExchangeRate || "—"}
+                      mono
+                    />
+                  </>
+                )}
+
+                {/* Transfer amounts */}
+                {isTransfer && (
+                  <>
+                    <SummaryRow
+                      label="المبلغ"
+                      value={transferAmount ? `${formatMoney(Number(transferAmount))} ${transferCurrency}` : "—"}
+                      mono
+                    />
+                    <SummaryRow label="العملة" value={transferCurrency || "—"} />
+                    <SummaryRow label="سعر الصرف" value={transferExchangeRate || "—"} mono />
+                  </>
+                )}
+
+                {/* Commission */}
+                {commissionMode === "apply" && commissionValue && (
+                  <>
+                    <div className="my-2 border-t border-slate-100" />
                     <SummaryRow
                       label="العمولة"
                       value={
                         commissionType === "percentage"
-                          ? `${formatMoney(numberValue(commissionValue))}% = ${formatMoney(computed.commissionAmount)} ${activeCurrency}`
+                          ? `${commissionValue}%  (${formatMoney(computed.commissionAmount)} ${activeCurrency})`
                           : `${formatMoney(computed.commissionAmount)} ${activeCurrency}`
                       }
                       mono
                     />
-                    <SummaryRow label="طرف العمولة" value={getCommissionPayerMeta(effectiveCommissionPayer).label} />
                     <SummaryRow
-                      label="عمولة العميل"
-                      value={`${formatMoney(computed.customerCommissionAmount)} ${activeCurrency}`}
+                      label="صافي المبلغ"
+                      value={`${formatMoney(computed.final)} ${activeCurrency}`}
                       mono
                     />
-                    {isSupplierFunding && (
-                      <SummaryRow
-                        label="عمولة المورد"
-                        value={`${formatMoney(computed.supplierCommissionAmount)} ${activeCurrency}`}
-                        mono
-                      />
-                    )}
                   </>
                 )}
 
-                <div className="my-3 h-px bg-slate-200" />
+                <div className="my-2 border-t border-slate-100" />
 
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-right text-[11px] font-bold text-slate-500">صافي العميل بعد حصته من العمولة</p>
-
-                  <p dir="ltr" className="mt-1 text-right font-mono text-2xl font-black tabular-nums text-slate-900">
-                    {formatMoney(computed.final)} <span className="text-sm text-slate-500">{activeCurrency}</span>
-                  </p>
-
-                  <p dir="ltr" className="mt-1 text-right font-mono text-xs text-slate-500">
-                    ≈ ${formatMoney(computed.usd)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-2">
-                <button type="submit" disabled={loading} className="ep-btn ep-btn-primary h-11 w-full">
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  حفظ العملية
-                </button>
-
-                <button type="button" onClick={() => navigate("/transactions")} className="ep-btn ep-btn-ghost h-11 w-full">
-                  إلغاء
-                </button>
+                {/* Date & Time */}
+                <SummaryRow label="التاريخ" value={transactionDate || "—"} mono />
+                <SummaryRow label="الوقت" value={transactionTime || "—"} mono />
               </div>
             </div>
+
+            <button type="submit" disabled={loading} className="ep-btn ep-btn-primary h-11 w-full">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              حفظ المعاملة
+            </button>
+
+            <button type="button" onClick={() => navigate("/transactions")} className="ep-btn ep-btn-ghost h-11 w-full">
+              إلغاء
+            </button>
           </aside>
+
         </div>
+
+
       </form>
     </div>
   );
@@ -1408,43 +1295,6 @@ function StatusSelect({ value, onChange }) {
         </option>
       ))}
     </select>
-  );
-}
-
-function SupplierDirectionPicker({ value, onChange }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      {SUPPLIER_DIRECTION_OPTIONS.map((option) => {
-        const active = value === option.value;
-        const meta = getSupplierDirectionMeta(option.value);
-        const Icon = option.value === "supplier_pays_intermediary" ? Building2 : Wallet;
-
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className={`flex min-h-24 items-center gap-3 rounded-2xl border-2 p-4 text-right transition ${
-              active ? "border-teal-500 bg-teal-50/70" : "border-slate-200 bg-white hover:bg-slate-50"
-            }`}
-          >
-            <div
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                active ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-black text-slate-900">{option.label}</p>
-              <p className="mt-1 text-[11px] font-bold text-slate-500">{option.description}</p>
-              <p className="mt-1 text-[11px] text-slate-400">{meta.cashImpact}</p>
-            </div>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

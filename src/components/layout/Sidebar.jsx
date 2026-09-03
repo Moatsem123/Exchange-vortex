@@ -22,16 +22,7 @@ import BrandOrbitLogo from "../../shared/BrandOrbitLogo";
 import { useAuth } from "../../context/AuthContext";
 
 const SECTIONS = [
-  {
-    label: "الرئيسية",
-    items: [
-      {
-        to: "/dashboard",
-        label: "لوحة التحكم",
-        icon: Home,
-      },
-    ],
-  },
+
   {
     label: "النظام والإدارة",
     items: [
@@ -142,18 +133,7 @@ const SECTIONS = [
       //     "box.viewAny",
       //   ],
       // },
-      {
-        to: "/currencies",
-        label: "العملات وأسعار الصرف",
-        icon: DollarSign,
-        permissions: [
-          "currency.viewAny",
-          "currency.manage",
-          "exchange_rate.update",
-          "exchange-rate.viewAny",
-          "exchange-rate.update",
-        ],
-      },
+
       {
         to: "/reports",
         label: "التقارير",
@@ -173,13 +153,7 @@ const SECTIONS = [
   {
     label: "المتابعة والتنبيهات",
     items: [
-      {
-        to: "/notifications",
-        label: "الإشعارات",
-        icon: Bell,
-        badge: true,
-        permissions: ["notification.viewAny", "notification.read", "notification.delete"],
-      },
+
       {
         to: "/archive",
         label: "الأرشيف",

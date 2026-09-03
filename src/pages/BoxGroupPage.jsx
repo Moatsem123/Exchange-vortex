@@ -830,26 +830,6 @@ function BoxGroupPage() {
               </select>
             </Field>
 
-            <Field label={getIdentifierLabel(group.apiType)} error={formErrors.account_identifier}>
-              <input
-                value={form.account_identifier}
-                onChange={(e) => updateFormField("account_identifier", e.target.value)}
-                className={inputClass(formErrors.account_identifier)}
-                placeholder={getIdentifierPlaceholder(group.apiType)}
-              />
-            </Field>
-
-            <Field label="الحالة" error={formErrors.status}>
-              <select
-                value={form.status}
-                onChange={(e) => updateFormField("status", e.target.value)}
-                className={inputClass(formErrors.status)}
-              >
-                <option value="">اختر الحالة</option>
-                <option value="active">نشط</option>
-                <option value="inactive">غير نشط</option>
-              </select>
-            </Field>
           </div>
 
           <Field label="ملاحظات" error={formErrors.notes}>
@@ -1122,18 +1102,6 @@ function AccountCard({ item, groupType, onEdit, onDelete, onBalance, onLogs, onO
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl bg-slate-50 p-3 text-right">
-        <p className="text-[11px] font-bold text-slate-500">{getIdentifierLabel(groupType)}</p>
-        <p dir="ltr" className="mt-1 font-mono text-xs font-bold text-slate-700">{getIdentifierValue(item)}</p>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between">
-        <Badge color={item.status === "active" ? "emerald" : "rose"} dot>
-          {item.status === "active" ? "نشط" : "غير نشط"}
-        </Badge>
-
-        <span className="text-[11px] font-bold text-teal-600">اضغط لعرض العمليات</span>
-      </div>
 
       {item.notes && <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">{item.notes}</div>}
 
